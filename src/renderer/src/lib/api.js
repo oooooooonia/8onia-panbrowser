@@ -73,9 +73,11 @@ export const danmakuUrl = (p) => `${API}/api/danmaku?path=${encodeURIComponent(p
 /** libass-wasm(SubtitlesOctopus) 渲染资源（主进程本地服务托管） */
 export const libassWorkerUrl = () => `${API}/vendor/libass/subtitles-octopus-worker.js`
 export const libassWasmUrl = () => `${API}/vendor/libass/subtitles-octopus-worker.wasm`
-export const cjkFontUrl = () => `${API}/vendor/fonts/cjk`
+/** 字体指纹查询串：字体文件换了 URL 也换，免得浏览器拿 max-age 缓存里的旧字体 */
+const fontTokenQuery = (t) => (t ? '?v=' + encodeURIComponent(t) : '')
+export const cjkFontUrl = (token) => API + '/vendor/fonts/cjk' + fontTokenQuery(token)
 /** 完整字库（微软雅黑）：缺字回退 + ASS 里「微软雅黑」族名的映射 */
-export const yaheiFontUrl = () => `${API}/vendor/fonts/yahei`
+export const yaheiFontUrl = (token) => API + '/vendor/fonts/yahei' + fontTokenQuery(token)
 
 /** 复制文本到剪贴板 */
 export async function copyText(text) {

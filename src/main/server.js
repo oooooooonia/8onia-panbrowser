@@ -707,6 +707,7 @@ export function startServer({ baidu }) {
     if ((p === '/vendor/fonts/cjk' || p === '/vendor/fonts/yahei') && (method === 'GET' || method === 'HEAD')) {
       const font = p === '/vendor/fonts/yahei' ? wideFontFile() : primaryFontFile()
       if (!font || !fs.existsSync(font)) return sendJson(res, 404, { ok: false, error: 'no font' })
+      debugLog('font serve ' + p + ' -> ' + path.basename(font))
       const ext = path.extname(font).toLowerCase()
       res.writeHead(200, {
         'content-type': ext === '.ttf' ? 'font/ttf' : ext === '.otf' ? 'font/otf' : 'font/ttf',

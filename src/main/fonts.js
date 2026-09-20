@@ -92,8 +92,25 @@ function findRounded() {
   return null
 }
 
-/** /vendor/fonts/cjk 要发的文件：圆体优先，系统里没有圆体就用全局兜底字体 */
+/**
+ * 手动指定字体文件（可选，优先级最高）：
+ * 环境变量 PANBOX_SUBTITLE_FONT=/path/to/方正准圆_GBK.ttf
+ * —— 自己有一份方正准圆（字幕组字体包里的）时最省事，也可用来排查字体问题。
+ */
+function envOverride() {
+  const p = process.env.PANBOX_SUBTITLE_FONT
+  if (!p) return null
+  try {
+    return fs.existsSync(p) ? p : null
+  } catch {
+    return null
+  }
+}
+
+/** /vendor/fonts/cjk 要发的文件：手动指定 > 圆体优先 > 全局兜底字体 */
 export function primaryFontFile() {
+  const forced = envOverride()
+  if (forced) return forced
   const r = findRounded()
   return r ? r.file : firstExisting(GLOBAL_FALLBACK)
 }
@@ -105,11 +122,13 @@ export function wideFontFile() {
 
 /** 给 /api/status 的字体信息：前端据此构造 libass 的 availableFonts / fallbackFont */
 export function subtitleFontInfo() {
+  const forced = envOverride()
   const rounded = findRounded()
   const wanted = ROUNDED[0].family
-  let family = rounded ? rounded.family : ''
+  let family = forced ? path.basename(forced) : rounded ? rounded.family : ''
   let installed = !!(rounded && family === wanted)
   let isFallback = false
+  if (forced) return finish(family, false, false, true)
   if (!rounded) {
     // 系统里没有任何圆体 → 用全局字体渲染（不是圆体，但保证有字形）
     const f = firstExisting(GLOBAL_FALLBACK)
@@ -117,13 +136,31 @@ export function subtitleFontInfo() {
     installed = false
     isFallback = true
   }
+  return finish(family, installed, isFallback, false)
+}
+
+function finish(family, installed, isFallback, forced) {
   const wide = wideFontFile()
   return {
-    requested: wanted, // 想用的字幕组常用圆体
+    requested: ROUNDED[0].family, // 想用的字幕组常用圆体
     family: family || '(no font found)',
     installed, // requested 是否真的装在系统里
     fallback: isFallback, // 是否退到了全局兜底字体
+    forced: !!forced, // 是否由 PANBOX_SUBTITLE_FONT 手动指定
     roundedNames: ROUNDED_NAMES,
-    wideNames: wide ? WIDE_NAMES : []
+    wideNames: wide ? WIDE_NAMES : [],
+    // 字体文件的「指纹」：字体一换 URL 就变，否则浏览器会拿 max-age 缓存里的旧字体
+    token: fontToken(primaryFontFile()),
+    wideToken: wide ? fontToken(wide) : ''
+  }
+}
+
+function fontToken(file) {
+  if (!file) return ''
+  try {
+    const st = fs.statSync(file)
+    return path.basename(file) + '-' + st.size + '-' + Math.round(st.mtimeMs)
+  } catch {
+    return path.basename(file)
   }
 }

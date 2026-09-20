@@ -889,10 +889,13 @@ export default function PlayerModal() {
         const sf = (server && server.subtitleFont) || null
         if (sf && sf.roundedNames) {
           const map = {}
-          for (const n of sf.roundedNames) if (n) map[String(n).toLowerCase()] = cjkFontUrl()
-          for (const n of sf.wideNames || []) if (n) map[String(n).toLowerCase()] = yaheiFontUrl()
+          // 带上字体指纹 token：字体文件换掉后 URL 会变，否则浏览器会一直用缓存里的旧字体
+          const pUrl = cjkFontUrl(sf.token)
+          const wUrl = yaheiFontUrl(sf.wideToken)
+          for (const n of sf.roundedNames) if (n) map[String(n).toLowerCase()] = pUrl
+          for (const n of sf.wideNames || []) if (n) map[String(n).toLowerCase()] = wUrl
           opts.availableFonts = map
-          opts.fallbackFont = cjkFontUrl()
+          opts.fallbackFont = wUrl || pUrl
           report('subtitle font ' + sf.family + (sf.fallback ? ' (global fallback)' : sf.installed ? ' (installed)' : '') + ' names=' + Object.keys(map).length)
         } else if (await cjkFontAvailable()) {
           opts.fallbackFont = cjkFontUrl()
