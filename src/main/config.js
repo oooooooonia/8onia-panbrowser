@@ -137,6 +137,8 @@ export function loadConfig() {
 export function saveConfig(patch) {
   const cfg = loadConfig()
   Object.assign(cfg, patch)
+  // 刚写入的是混淆值：立刻解码到内存，否则本次运行仍会认为「未配置」
+  if (cfg.ddpAppSecretEnc) cfg.ddpAppSecret = deobfuscateSecret(cfg.ddpAppSecretEnc)
   try {
     // 落盘时把 AppSecret 换成混淆值，配置文件里不留明文
     const out = { ...cfg }
