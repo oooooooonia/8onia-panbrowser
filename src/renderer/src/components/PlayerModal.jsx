@@ -158,6 +158,18 @@ export default function PlayerModal() {
   const danmakuOpt = useApp((s) => s.danmakuOpt)
   const setDanmakuOpt = useApp((s) => s.setDanmakuOpt)
   const [err, setErr] = useState('')
+  // 播放器内报错/警告条：顶部滑入、可叉掉、10s 未关自动淡出
+  const [hintGone, setHintGone] = useState(false)
+  const [hintLeaving, setHintLeaving] = useState(false)
+  const hintTimerRef = useRef(null)
+  const closeHint = useCallback(() => {
+    setHintLeaving(true)
+    if (hintTimerRef.current) {
+      clearTimeout(hintTimerRef.current)
+      hintTimerRef.current = null
+    }
+    setTimeout(() => setHintGone(true), 280)
+  }, [])
   const [showLink, setShowLink] = useState(false)
   const [raw, setRaw] = useState('')
   const [copied, setCopied] = useState(false)
@@ -1242,6 +1254,26 @@ export default function PlayerModal() {
     setCopied(false)
   }, [player && player.path])
 
+  /* 换集/重开视频时重置提示条状态 */
+  useEffect(() => {
+    setHintGone(false)
+    setHintLeaving(false)
+  }, [player && player.path])
+
+  /* 提示条出现后 10s 没被叉掉就自动淡出 */
+  const hintVisible = !!(player && (err || hasBitmapEmbed)) && !hintGone
+  useEffect(() => {
+    if (!hintVisible) return undefined
+    if (hintTimerRef.current) clearTimeout(hintTimerRef.current)
+    hintTimerRef.current = setTimeout(closeHint, 10000)
+    return () => {
+      if (hintTimerRef.current) {
+        clearTimeout(hintTimerRef.current)
+        hintTimerRef.current = null
+      }
+    }
+  }, [hintVisible, closeHint])
+
   if (!player) return null
   const src = streamUrl(player.path)
 
@@ -1326,21 +1358,19 @@ export default function PlayerModal() {
           <>
             <div className="art-host" ref={boxRef} />
             {subLoading ? <div className="player-loading"><Loader2 size={16} className="spin" /> 字幕解析中…</div> : null}
-            {err ? (
-              <div className="player-hint">
+            {/* 报错/警告：从播放器顶部滑入、带叉键、10s 未关自动淡出（不再压住底部控制条） */}
+            {!hintGone && (err || hasBitmapEmbed) ? (
+              <div className={'player-hint' + (hintLeaving ? ' leaving' : '')}>
                 <CircleAlert size={15} />
-                <span>{err}</span>
-                {isDesktop ? (
+                <span>{err || '该视频含位图内嵌字幕（PGS/DVD），网页播放器无法显示。请在播放器控制栏切换到外部播放器（PotPlayer/mpv/VLC）获取原画并完整显示字幕。'}</span>
+                {err && isDesktop ? (
                   <button className="btn small" onClick={openPot}>
                     <MonitorPlay size={14} /> PotPlayer 播放原画
                   </button>
                 ) : null}
-              </div>
-            ) : null}
-            {hasBitmapEmbed && !err ? (
-              <div className="player-hint">
-                <CircleAlert size={15} />
-                <span>该视频含位图内嵌字幕（PGS/DVD），网页播放器无法显示。请在下方切换到外部播放器（PotPlayer/mpv/VLC）获取原画并完整显示字幕。</span>
+                <button className="player-hint-close" onClick={closeHint} aria-label="关闭" title="关闭">
+                  <X size={14} />
+                </button>
               </div>
             ) : null}
           </>

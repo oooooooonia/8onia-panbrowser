@@ -289,13 +289,24 @@ a { color: var(--accent); text-decoration: none; }
 .sub-bar.dm-bar .sub-bar-title { color: #ffd766; }
 .sub-chip i.dm-auto { color: #ffd766; border-color: rgba(255, 215, 102, .45); }
 /* 插件控件已改挂到播放器控制栏（插件默认位置），弹幕条只负责文件选择 */
+/* 播放器内报错/警告条：贴播放器顶部（不再压住底部控制条），滑入 + 叉键 + 10s 淡出 */
 .player-hint {
-  position: absolute; left: 12px; right: 12px; bottom: 10px; z-index: 95;
-  background: rgba(234,179,63,.1); border: 1px solid rgba(234,179,63,.4);
-  color: #ffd78a; border-radius: 10px; padding: 9px 11px;
+  position: absolute; left: 12px; right: 12px; top: 10px; z-index: 95;
+  background: rgba(234,179,63,.12); border: 1px solid rgba(234,179,63,.45);
+  color: #ffd78a; border-radius: 10px; padding: 9px 32px 9px 11px;
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12.5px;
   box-shadow: 0 6px 20px rgba(0,0,0,.5);
+  animation: toast-in .22s ease-out both;
 }
+.player-hint.leaving { animation: toast-out .28s ease-in both; }
+.player-hint button.btn { pointer-events: auto; }
+.player-hint-close {
+  position: absolute; right: 6px; top: 6px;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 20px; height: 20px; padding: 0; border-radius: 6px;
+  background: transparent; border: none; color: #d8b56d; cursor: pointer;
+}
+.player-hint-close:hover { color: #ffd78a; background: rgba(255,255,255,.08); }
 .player-tools {
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex: none;
   padding: 8px 12px calc(8px + env(safe-area-inset-bottom)); border-top: 1px solid var(--border);
