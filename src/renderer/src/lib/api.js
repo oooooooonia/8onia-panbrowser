@@ -63,6 +63,8 @@ export const subassUrl = (p) => `${API}/api/subass?path=${encodeURIComponent(p)}
 /** 内嵌字幕：ffmpeg 从其容器里抽取的某条文本字幕轨，渲染成 ASS（或 VTT）*/
 export const embedSubUrl = (videoPath, index, codec, fmt = 'ass') =>
   `${API}/api/embed/sub?path=${encodeURIComponent(videoPath)}&index=${Number(index)}&codec=${encodeURIComponent(codec || '')}&fmt=${fmt}`
+/** 弹幕地址：B 站弹幕 XML，交给 artplayer-plugin-danmuku 自行 fetch + 解析（服务端代理 dlink，带 UA） */
+export const danmakuUrl = (p) => `${API}/api/danmaku?path=${encodeURIComponent(p)}`
 /** libass-wasm(SubtitlesOctopus) 渲染资源（主进程本地服务托管） */
 export const libassWorkerUrl = () => `${API}/vendor/libass/subtitles-octopus-worker.js`
 export const libassWasmUrl = () => `${API}/vendor/libass/subtitles-octopus-worker.wasm`

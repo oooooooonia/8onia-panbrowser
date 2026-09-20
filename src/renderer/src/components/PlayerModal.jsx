@@ -1,13 +1,14 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import Artplayer from 'artplayer'
+import artplayerPluginDanmuku from 'artplayer-plugin-danmuku'
 import SubtitlesOctopusModule from 'libass-wasm'
 import {
   X, Download, MonitorPlay, Link2, Copy, CircleAlert, File as FileIcon, Check, Captions, Loader2, ListVideo,
-  SkipForward, Scissors, RotateCcw, Tag
+  SkipForward, Scissors, RotateCcw, Tag, MessageSquareText
 } from 'lucide-react'
 import { useApp } from '../store/app'
 import {
-  streamUrl, downloadUrl, copyText, api, subtitleUrl, subassUrl, embedSubUrl,
+  streamUrl, downloadUrl, copyText, api, subtitleUrl, subassUrl, embedSubUrl, danmakuUrl,
   libassWorkerUrl, libassWasmUrl, cjkFontUrl, isDesktop, report
 } from '../lib/api'
 import { formatSize, formatClock } from '../lib/format'
@@ -176,6 +177,13 @@ export default function PlayerModal() {
   const [showMark, setShowMark] = useState(false)
   const [showChapters, setShowChapters] = useState(false)
   const [markDraft, setMarkDraft] = useState({ op: { start: '', end: '' }, ed: { start: '', end: '' }, scope: 'series' })
+  /* ---- 弹幕（B 站 XML） ---- */
+  // danmakus: 同目录 .xml 列表；danmaku: 当前选中项 {name,path}（null = 不加载）
+  const [danmakus, setDanmakus] = useState([])
+  const [danmaku, setDanmaku] = useState(null)
+  // playerEpoch：ArtPlayer 每次重建后 +1，用于重建后重新把弹幕灌进新实例
+  const [playerEpoch, setPlayerEpoch] = useState(0)
+  const loadedDmRef = useRef(null) // 已装载的弹幕 path，避免重复 fetch
   const boxRef = useRef(null)
   const artRef = useRef(null)
   const restoreRef = useRef(0)
@@ -301,6 +309,8 @@ export default function PlayerModal() {
     setSubs([])
     setSel(null)
     setEps([])
+    setDanmakus([])
+    setDanmaku(null)
     setSubLoading(true)
     ;(async () => {
       let fileSubs = []
@@ -313,6 +323,20 @@ export default function PlayerModal() {
         eps = (r && r.videos) || []
         setEps(eps)
         report(`subs found=${fileSubs.length} videos=${eps.length} for ${String(player.name).slice(-40)}`)
+        // 同目录弹幕：自动匹配「归一化后与视频同名」的那份 xml（VCB 这类一集一份弹幕的文件名与视频完全一致）
+        const dms = (r && r.danmakus) || []
+        if (dms.length) {
+          setDanmakus(dms)
+          const dwKey = normSubKey(player.name)
+          const dmPick =
+            dms.find((d) => normSubKey(d.name) === dwKey) ||
+            dms.find((d) => String(d.name).replace(/\.[^.]+$/, '').toLowerCase() === String(player.name).replace(/\.[^.]+$/, '').toLowerCase()) ||
+            null
+          setDanmaku(dmPick)
+          report(`danmaku found=${dms.length} picked=${dmPick ? dmPick.name.slice(-28) : 'none'}`)
+        } else {
+          report('danmaku found=0')
+        }
       } catch { /* ignore */ }
       try {
         const probe = await api.embedProbe(player.path)
@@ -370,6 +394,40 @@ export default function PlayerModal() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [player && player.path])
+
+  /* 弹幕装载：把选中的 xml 灌进当前 ArtPlayer 实例。
+     依赖 playerEpoch —— 换字幕/换集时 ArtPlayer 会重建，重建后必须重新灌一次。 */
+  useEffect(() => {
+    if (!isVideo) return
+    const dm = artRef.current && artRef.current.plugins && artRef.current.plugins.artplayerPluginDanmuku
+    if (!dm) return
+    const want = danmaku ? danmaku.path : null
+    if (loadedDmRef.current === want) return
+    loadedDmRef.current = want
+    try {
+      dm.load(want ? danmakuUrl(want) : [])
+      report(`danmaku load=${want ? want.slice(-28) : 'off'}`)
+    } catch (e) {
+      report(`danmaku load fail ${e.message}`)
+      notify('弹幕加载失败：' + e.message, 'error')
+    }
+  }, [danmaku, playerEpoch, isVideo, notify])
+
+  /* 手动切换弹幕（选中即装载；不重建播放器，不丢进度） */
+  const switchDanmaku = (d) => {
+    const dm = artRef.current && artRef.current.plugins && artRef.current.plugins.artplayerPluginDanmuku
+    if (!dm) return setDanmaku(d)
+    const want = d ? d.path : null
+    if (loadedDmRef.current === want) return setDanmaku(d)
+    loadedDmRef.current = want
+    setDanmaku(d)
+    try {
+      dm.load(want ? danmakuUrl(want) : [])
+      if (d) dm.show()
+    } catch (e) {
+      notify('弹幕加载失败：' + e.message, 'error')
+    }
+  }
 
   /* ---------- OP/ED 检测：先快路径（手动标记 + 章节打标），再后台补字幕信号 ---------- */
   useEffect(() => {
@@ -543,6 +601,31 @@ export default function PlayerModal() {
         'x5-video-player-fullscreen': 'false'
       }
     }
+    // 弹幕：解析/渲染交给 artplayer-plugin-danmuku（内置 B 站 XML 解析，自己在 Blob Worker 里解析）。
+    // 控制件（开关 + 齿轮设置面板 + 发弹幕输入框）挂到页面里的「弹幕」条上；弹幕文字仍走播放器自身图层。
+    // 具体 xml 由下面的 effect 调 load() 灌入 —— 同目录列表是异步到的，且换字幕/换集时 ArtPlayer 会重建。
+    // 注意：mount 必须传「选择器字符串」，不能传 DOM 元素 —— ArtPlayer 会对 options 做
+    // JSON.stringify（选项快照），DOM 元素上的 __reactFiber 循环引用会直接把播放器初始化搞崩。
+    const dmMountSel = document.getElementById('pan-danmaku-mount') ? '#pan-danmaku-mount' : undefined
+    options.plugins = [
+      artplayerPluginDanmuku({
+        danmuku: [],
+        ...(dmMountSel ? { mount: dmMountSel } : {}),
+        theme: 'dark',
+        emitter: true, // 保留发弹幕输入框（仅本次播放内可见，本 app 不向 B 站投稿）
+        visible: true,
+        opacity: 0.8,
+        fontSize: 25,
+        speed: 5,
+        margin: [10, '25%'], // 下方留 25%，避免压住同目录字幕
+        modes: [0, 1, 2],
+        antiOverlap: true,
+        synchronousPlayback: false,
+        heatmap: false,
+        maxLength: 100,
+        lockTime: 5
+      })
+    ]
     // 字幕统一委托给 libass 以得到 PotPlayer 观感；这里不设 ArtPlayer 原生字幕（仅在 libass 失败时降级）
 
     let art = null
@@ -555,6 +638,8 @@ export default function PlayerModal() {
       return undefined
     }
     artRef.current = art
+    loadedDmRef.current = null // 新实例还没装弹幕，交给下面的 effect 灌
+    setPlayerEpoch((n) => n + 1)
     report(`player created video=${String(videoKey || '').slice(-40)}`)
 
     // 容器尺寸变化（窗口缩放/信息条增删/进入全屏）时同步 libass 画布尺寸与进度条标记，
@@ -1266,6 +1351,44 @@ export default function PlayerModal() {
               </button>
             )
           })}
+        </div>
+      ) : null}
+
+      {/* 弹幕条（在「字幕」条下方）：同目录 .xml 选择 + 自动匹配 + 插件自带设置面板/开关/输入框 */}
+      {isVideo ? (
+        <div className="sub-bar dm-bar">
+          <span className="sub-bar-title">
+            <MessageSquareText size={14} /> 弹幕
+          </span>
+          <button className={`sub-chip ${!danmaku ? 'on' : ''}`} onClick={() => switchDanmaku(null)}>
+            关闭
+          </button>
+          {danmakus.length === 0 ? (
+            <span className="dim small">同目录未找到 .xml 弹幕（B 站格式）</span>
+          ) : (
+            danmakus.map((d) => {
+              const on = !!(danmaku && danmaku.path === d.path)
+              const base = String(player.name).replace(/\.[^.]+$/, '')
+              const raw = String(d.name).replace(/\.[^.]+$/, '')
+              // 标签：优先取集数标记（[01] / [OVA] / [SP1]），取不到就回落到去掉扩展名的文件名
+              const ep = String(d.name).match(/\[(\d{1,3}(?:v\d)?|SP\d*|OVA\d*|NC(?:OP|ED)\d*|OP\d*|ED\d*)\]/i)
+              const label = ep ? ep[1] : raw === base ? '同名' : raw
+              const auto = normSubKey(d.name) === normSubKey(player.name)
+              return (
+                <button
+                  key={d.path}
+                  className={`sub-chip ${on ? 'on' : ''}`}
+                  onClick={() => switchDanmaku(d)}
+                  title={`${d.name}\n${formatSize(d.size)}`}
+                >
+                  <span className="ellip">{label}</span>
+                  {auto ? <i className="dm-auto" title="与当前视频同名（自动匹配）">匹配</i> : <i>XML</i>}
+                </button>
+              )
+            })
+          )}
+          {/* artplayer-plugin-danmuku 的控制件挂载点：开关 + 齿轮设置（透明度/字号/显示区域/速度/类型屏蔽/防重叠/同步）+ 发弹幕输入框 */}
+          <div id="pan-danmaku-mount" className="dm-mount" />
         </div>
       ) : null}
       </div>

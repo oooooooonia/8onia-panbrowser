@@ -22,7 +22,8 @@
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "vite": "6.4.3",
-    "zustand": "5.0.14"
+    "zustand": "5.0.14",
+    "artplayer-plugin-danmuku": "^5.3.0"
   },
   "build": {
     "appId": "com.personal.panbrowser",

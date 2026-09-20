@@ -283,6 +283,17 @@ a { color: var(--accent); text-decoration: none; }
 .sub-chip i { font-style: normal; font-size: 9.5px; color: var(--dim); border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; flex: none; }
 .sub-chip.on { color: var(--accent); border-color: var(--accent); background: rgba(77, 159, 255, .1); }
 .sub-chip.on i { color: var(--accent); border-color: rgba(77,159,255,.4); }
+
+/* 弹幕条（在字幕条下方）：文件选择沿用 sub-chip，右侧挂 artplayer-plugin-danmuku 的控制件 */
+.sub-bar.dm-bar { background: rgba(255, 214, 102, .035); }
+.sub-bar.dm-bar .sub-bar-title { color: #ffd766; }
+.sub-chip i.dm-auto { color: #ffd766; border-color: rgba(255, 215, 102, .45); }
+/* 插件控制件挂载点：内容由插件生成，默认贴右；空时不占位 */
+.dm-mount { display: inline-flex; align-items: center; gap: 8px; margin-left: auto; flex: none; }
+.dm-mount:empty { display: none; }
+/* 插件自带控件在深色底下的轻微适配（只调尺寸/颜色，不改结构） */
+.dm-mount .apd-toggle, .dm-mount .apd-config, .dm-mount .apd-style { height: 22px; }
+.dm-mount .apd-input { min-width: 150px; }
 .player-hint {
   position: absolute; left: 12px; right: 12px; bottom: 10px; z-index: 95;
   background: rgba(234,179,63,.1); border: 1px solid rgba(234,179,63,.4);

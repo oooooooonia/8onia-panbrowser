@@ -12,6 +12,10 @@ import { probeEmbeddedSubs, extractSubtitleText, ffmpegAvailable, localStreamUrl
 import { createSkipService } from './skip.js'
 import { putAssText } from './asscache.js'
 
+// 同目录弹幕文件（B 站弹幕 XML）：解析/渲染交给前端 artplayer-plugin-danmuku，服务端只负责列目录 + 代理取回
+const DANMAKU_EXTS = ['.xml']
+const isDanmakuName = (name) => DANMAKU_EXTS.includes(extOf(name))
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const RENDERER_DIR = path.join(__dirname, '../renderer') // out/renderer
 // libass-wasm(SubtitlesOctopus) 渲染资产目录（worker + wasm + 主库；随包打包进 resources/vendor/libass）
@@ -576,12 +580,39 @@ export function startServer({ baidu }) {
         const subs = entries
           .filter((e) => !e.isDir && isSubtitleName(e.name))
           .map((e) => ({ name: e.name, path: e.path, ext: extOf(e.name) }))
+        // 同目录弹幕（B 站 XML）：供播放页“弹幕”条选择；一个视频通常配一份同名 xml
+        const danmakus = entries
+          .filter((e) => !e.isDir && isDanmakuName(e.name))
+          .map((e) => ({ name: e.name, path: e.path, ext: extOf(e.name), size: e.size }))
+          .sort((a, b) => String(a.name).localeCompare(String(b.name), 'zh-CN', { numeric: true, sensitivity: 'base' }))
         // 同目录视频（剧集）：供播放页“剧集选择”使用，按数字大小优先排序
         const videos = entries
           .filter((e) => !e.isDir && classify(e.name) === 'video')
           .map((e) => ({ name: e.name, path: e.path, size: e.size, mtime: e.mtime, kind: 'video' }))
           .sort((a, b) => String(a.name).localeCompare(String(b.name), 'zh-CN', { numeric: true, sensitivity: 'base' }))
-        return sendJson(res, 200, { ok: true, parent, subs, videos })
+        return sendJson(res, 200, { ok: true, parent, subs, videos, danmakus })
+      } catch (err) {
+        return sendJson(res, 200, { ok: false, error: err.message })
+      }
+    }
+
+    /* 弹幕（B 站 XML）：本地代理取回原始 XML，前端 artplayer-plugin-danmuku 自行 fetch(url) 解析。
+       必须带 CORS 头：dev 模式渲染层在 Vite 端口，与本服务跨源。 */
+    if (p === '/api/danmaku' && method === 'GET') {
+      try {
+        const xmlPath = q.get('path') || ''
+        if (!isDanmakuName(xmlPath)) throw new Error('不是弹幕文件（仅支持 .xml）')
+        const url = await baidu.dlinkForFile(xmlPath)
+        const buf = await fetchBuffer(url, { 'User-Agent': DLINK_UA, Accept: '*/*' }, 32 * 1024 * 1024)
+        const text = decodeSubtitle(buf)
+        const body = Buffer.from(text, 'utf-8')
+        res.writeHead(200, {
+          'content-type': 'text/xml; charset=utf-8',
+          'content-length': body.length,
+          'cache-control': 'no-store',
+          ...corsHeaders()
+        })
+        return res.end(body)
       } catch (err) {
         return sendJson(res, 200, { ok: false, error: err.message })
       }
