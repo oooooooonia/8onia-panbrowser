@@ -4,6 +4,9 @@ import { api as net } from '../lib/api'
 
 const isMedia = (e) => e && (e.kind === 'video' || e.kind === 'audio')
 
+// 每条 toast 的自动关闭定时器（手动叉掉时清掉）
+const toastTimers = new Map()
+
 /**
  * 弹幕设置的真源在服务端 userData/config.json（桌面版 / dev / 手机局域网共用同一份）。
  * 策略＝「写透 + 短防抖」：任何一次改动 600ms 后自动落盘，不依赖「退出应用」那一次机会
@@ -118,8 +121,27 @@ export const useApp = create(
       toasts: [],
       notify: (msg, type = 'info') => {
         const id = Date.now() + Math.random()
-        set({ toasts: [...get().toasts, { id, msg, type }] })
-        setTimeout(() => set({ toasts: get().toasts.filter((t) => t.id !== id) }), 3200)
+        set({ toasts: [...get().toasts, { id, msg, type, leaving: false }] })
+        // 报错/警告：10s 内没叉掉就自动淡出；其它提示 3.2s
+        const ms = type === 'error' || type === 'warn' ? 10000 : 3200
+        toastTimers.set(
+          id,
+          setTimeout(() => get().dismissToast(id), ms)
+        )
+      },
+      // 关掉一条提示：先标 leaving 触发淡出动画，动画结束再移除
+      dismissToast: (id) => {
+        const tm = toastTimers.get(id)
+        if (tm) {
+          clearTimeout(tm)
+          toastTimers.delete(id)
+        }
+        if (!get().toasts.some((t) => t.id === id && !t.leaving)) {
+          set({ toasts: get().toasts.filter((t) => t.id !== id) })
+          return
+        }
+        set({ toasts: get().toasts.map((t) => (t.id === id ? { ...t, leaving: true } : t)) })
+        setTimeout(() => set({ toasts: get().toasts.filter((t) => t.id !== id) }), 280)
       }
     }),
     {

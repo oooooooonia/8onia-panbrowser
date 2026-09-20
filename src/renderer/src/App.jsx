@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { HardDrive, FolderOpen, Settings as SettingsIcon, Loader2, CircleAlert, CircleCheck, Info } from 'lucide-react'
+import { HardDrive, FolderOpen, Settings as SettingsIcon, Loader2, CircleAlert, CircleCheck, Info, X } from 'lucide-react'
 import { useApp } from './store/app'
 import HomePage from './pages/HomePage'
 import SettingsPage from './pages/SettingsPage'
@@ -11,6 +11,7 @@ export default function App() {
   const booting = useApp((s) => s.booting)
   const refreshStatus = useApp((s) => s.refreshStatus)
   const toasts = useApp((s) => s.toasts)
+  const dismissToast = useApp((s) => s.dismissToast)
   const player = useApp((s) => s.player)
   const [page, setPage] = useState('files')
 
@@ -93,9 +94,12 @@ export default function App() {
 
       <div className="toasts">
         {toasts.map((t) => (
-          <div key={t.id} className={`toast ${t.type}`}>
+          <div key={t.id} className={`toast ${t.type}${t.leaving ? ' leaving' : ''}`}>
             {t.type === 'ok' ? <CircleCheck size={15} /> : t.type === 'error' ? <CircleAlert size={15} /> : <Info size={15} />}
             <span>{t.msg}</span>
+            <button className="toast-close" onClick={() => dismissToast(t.id)} aria-label="关闭" title="关闭">
+              <X size={14} />
+            </button>
           </div>
         ))}
       </div>

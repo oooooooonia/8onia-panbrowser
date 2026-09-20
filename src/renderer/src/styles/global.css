@@ -380,18 +380,38 @@ textarea.input { resize: vertical; }
 .found-item svg { color: var(--ok); flex: none; }
 
 /* ---------- toast ---------- */
+/* 提示条：从顶部滑入；报错/警告 10s 未叉掉就淡出（见 store 里的 dismissToast） */
 .toasts {
   position: fixed; left: 50%; transform: translateX(-50%);
-  bottom: calc(var(--nav-h) + 14px); z-index: 90;
+  top: 10px; z-index: 100;
   display: flex; flex-direction: column; gap: 6px; align-items: center;
   pointer-events: none; width: min(92vw, 460px);
 }
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(-16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes toast-out {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(-12px); }
+}
 .toast {
+  position: relative;
   display: flex; align-items: flex-start; gap: 7px;
   background: #1b232e; border: 1px solid var(--border); color: var(--text);
-  border-radius: 11px; padding: 9px 12px; font-size: 12.5px; line-height: 1.5;
+  border-radius: 11px; padding: 9px 30px 9px 12px; font-size: 12.5px; line-height: 1.5;
   box-shadow: 0 8px 24px rgba(0,0,0,.35); max-width: 100%;
+  pointer-events: auto; /* 容器是 none，这里要放开，否则叉键点不到 */
+  animation: toast-in .22s ease-out both;
 }
+.toast.leaving { animation: toast-out .28s ease-in both; }
+.toast-close {
+  position: absolute; right: 6px; top: 6px;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 20px; height: 20px; padding: 0; border-radius: 6px;
+  background: transparent; border: none; color: var(--dim); cursor: pointer;
+}
+.toast-close:hover { color: var(--text); background: rgba(255,255,255,.07); }
 .toast.ok { border-color: rgba(62,207,142,.5); } .toast.ok svg { color: var(--ok); flex: none; margin-top: 1px; }
 .toast.error { border-color: rgba(239,109,109,.5); } .toast.error svg { color: var(--danger); flex: none; margin-top: 1px; }
 .toast.info svg { color: var(--accent); flex: none; margin-top: 1px; }
