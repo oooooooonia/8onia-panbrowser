@@ -34,7 +34,7 @@ export const DEFAULTS = {
   subFontScale: 0.05,
   subOutline: 1.4,
   subShadow: 0.6,
-  subWeight: 'medium', // 字幕粗细：normal | medium | bold（后两者用合成加粗实现）
+  subWeight: 'normal', // 字幕粗细：normal（默认，严格按字幕文件自身的 Bold 设定）| medium | bold
   // ---- 片头/片尾（OP/ED）跳过 ----
   skipEnabled: true, // 总开关：播放器内是否显示跳过按钮/进度条标记
   skipAutoOp: false, // 进入 OP 区间后自动跳过
@@ -184,5 +184,6 @@ export function publicConfig() {
 /** 字幕粗细：normal | medium | bold（其余值一律回落到 medium） */
 export function normalizeSubWeight(v) {
   const s = String(v || '').toLowerCase()
-  return s === 'normal' || s === 'bold' ? s : 'medium'
+  // 默认 normal：不改字幕文件自己的粗细
+  return s === 'medium' || s === 'bold' ? s : 'normal'
 }

@@ -907,7 +907,8 @@ export default function PlayerModal() {
           for (const n of sf.roundedNames) if (n) map[String(n).toLowerCase()] = pUrl
           for (const n of sf.wideNames || []) if (n) map[String(n).toLowerCase()] = wUrl
           opts.availableFonts = map
-          opts.fallbackFont = wUrl || pUrl
+          // 字幕里写的字体，系统装了就用系统那份（上面按族名登记的），没装则用设置里的全局字幕字体代替
+          opts.fallbackFont = pUrl
           report('subtitle font ' + sf.family + (sf.fallback ? ' (global fallback)' : sf.installed ? ' (installed)' : '') + ' names=' + Object.keys(map).length)
         } else if (await cjkFontAvailable()) {
           opts.fallbackFont = cjkFontUrl()
