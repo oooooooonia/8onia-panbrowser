@@ -1,0 +1,61 @@
+{
+  "name": "pan-browser",
+  "version": "0.1.1",
+  "description": "PanBrowser - 百度网盘个人浏览器（Electron，可全新电脑安装）",
+  "main": "out/main/index.js",
+  "author": "personal",
+  "license": "MIT",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "start": "electron-vite preview",
+    "dist": "electron-vite build && electron-builder --win nsis --x64"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "4.7.0",
+    "artplayer": "5.4.0",
+    "electron": "37.10.3",
+    "electron-builder": "26.15.3",
+    "electron-vite": "3.1.0",
+    "libass-wasm": "4.1.0",
+    "lucide-react": "1.28.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "vite": "6.4.3",
+    "zustand": "5.0.14"
+  },
+  "build": {
+    "appId": "com.personal.panbrowser",
+    "productName": "PanBrowser",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "out/**",
+      "scripts/**",
+      "resources/**",
+      "package.json"
+    ],
+    "asar": true,
+    "electronDist": "node_modules/electron/dist",
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "PanBrowser"
+    }
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "_note": "PanBrowser 初始凭证模板（可选，运行时请复制为 resources/default-config.json）。首次启动时 userData 下若没有 config.json，主进程会读取 resources/default-config.json 里的这几个字段作为初始值；留空即「未登录」，启动后请在设置页手动填写开放平台凭证，或用「从 AList 导入凭证」读取本机 AList 的 data.db。",
+  "clientId": "",
+  "clientSecret": "",
+  "refreshToken": "",
+  "accessToken": "",
+  "accessTokenExpiresAt": 0,
+  "rootFolderPath": "/"
+}

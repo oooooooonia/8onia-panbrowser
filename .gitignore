@@ -1,0 +1,16 @@
+node_modules/
+out/
+dist/
+logs/
+*.log
+.runtime/
+.vite/
+.debug/
+.npm-cache/
+
+# 本机凭证（不要提交；模板见 resources/default-config.example.json）
+resources/default-config.json
+
+# 意外生成的垃圾目录（历史上由误用 %SystemDrive% 等路径产生）
+%SystemDrive%/
+NVIDIA Corporation/
