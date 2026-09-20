@@ -288,12 +288,7 @@ a { color: var(--accent); text-decoration: none; }
 .sub-bar.dm-bar { background: rgba(255, 214, 102, .035); }
 .sub-bar.dm-bar .sub-bar-title { color: #ffd766; }
 .sub-chip i.dm-auto { color: #ffd766; border-color: rgba(255, 215, 102, .45); }
-/* 插件控制件挂载点：内容由插件生成，默认贴右；空时不占位 */
-.dm-mount { display: inline-flex; align-items: center; gap: 8px; margin-left: auto; flex: none; }
-.dm-mount:empty { display: none; }
-/* 插件自带控件在深色底下的轻微适配（只调尺寸/颜色，不改结构） */
-.dm-mount .apd-toggle, .dm-mount .apd-config, .dm-mount .apd-style { height: 22px; }
-.dm-mount .apd-input { min-width: 150px; }
+/* 插件控件已改挂到播放器控制栏（插件默认位置），弹幕条只负责文件选择 */
 .player-hint {
   position: absolute; left: 12px; right: 12px; bottom: 10px; z-index: 95;
   background: rgba(234,179,63,.1); border: 1px solid rgba(234,179,63,.4);

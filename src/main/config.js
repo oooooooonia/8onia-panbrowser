@@ -41,7 +41,21 @@ export const DEFAULTS = {
   skipAutoEd: false, // 进入 ED 区间后自动跳过
   skipDelaySec: 2, // 自动跳过前的等待秒数（0 = 立即）
   skipUseChapters: true, // 使用视频文件章节（打标）
-  skipUseSubtitles: true // 使用字幕信号（ASS 样式名/歌词块、跨集重复文本）
+  skipUseSubtitles: true, // 使用字幕信号（ASS 样式名/歌词块、跨集重复文本）
+  // ---- 弹幕（B 站 XML）外观与行为：artplayer-plugin-danmuku 的 option 子集 ----
+  // 存 userData/config.json：桌面版 / npm run dev / 手机局域网访问同一个服务 → 共用同一份
+  danmaku: {
+    visible: true, // 弹幕层开关
+    opacity: 0.8, // 透明度 0~1
+    fontSize: 25, // 字号（px 数字或 "25%" 百分比）
+    speed: 5, // 1~10，越大越慢（在屏时间越长）
+    margin: [10, '25%'], // [上, 下] 显示区域边距，下方留 25% 不压字幕
+    modes: [0, 1, 2], // 可见类型：0 滚动 / 1 顶部 / 2 底部
+    antiOverlap: true, // 防重叠
+    synchronousPlayback: false, // 跟随播放速度
+    color: '#FFFFFF', // 默认颜色（可被单条弹幕覆盖）
+    mode: 0 // 手动发弹幕的默认类型
+  }
 }
 
 let cache = null
@@ -100,6 +114,35 @@ export function clearCredentials() {
   })
 }
 
+/** 弹幕设置归一化：读取与保存都走它，避免脏值进 config.json / 脏值喂给弹幕插件 */
+export function normalizeDanmaku(input) {
+  const D = DEFAULTS.danmaku
+  const d = input && typeof input === 'object' ? input : {}
+  const num = (v, lo, hi, dflt) => {
+    const n = Number(v)
+    return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : dflt
+  }
+  // 支持像素数字或 "25%" 百分比（artplayer-plugin-danmuku 的 margin/fontSize 都吃这两种）
+  const size = (v, dflt) => {
+    if (typeof v === 'string' && /^[0-9]{1,3}([.][0-9]+)?%$/.test(v)) return v
+    return num(v, 0, 500, dflt)
+  }
+  const modes = Array.isArray(d.modes) ? d.modes.map(Number).filter((m) => m === 0 || m === 1 || m === 2) : []
+  const margin = Array.isArray(d.margin) ? d.margin : []
+  return {
+    visible: d.visible !== false,
+    opacity: num(d.opacity, 0, 1, D.opacity),
+    fontSize: size(d.fontSize, D.fontSize),
+    speed: num(d.speed, 1, 10, D.speed),
+    margin: [size(margin[0], D.margin[0]), size(margin[1], D.margin[1])],
+    modes: modes.length ? Array.from(new Set(modes)).sort() : D.modes.slice(),
+    antiOverlap: d.antiOverlap !== false,
+    synchronousPlayback: !!d.synchronousPlayback,
+    color: typeof d.color === 'string' && /^#[0-9a-fA-F]{6}$/.test(d.color) ? d.color.toUpperCase() : D.color,
+    mode: num(d.mode, 0, 2, D.mode)
+  }
+}
+
 /** 序列化给渲染层。本地个人工具（默认仅 127.0.0.1 监听），设置页需可回显编辑已存凭证 */
 export function publicConfig() {
   const c = loadConfig()
@@ -129,6 +172,7 @@ export function publicConfig() {
     skipDelaySec: Number.isFinite(Number(c.skipDelaySec)) ? Number(c.skipDelaySec) : 2,
     skipUseChapters: c.skipUseChapters !== false,
     skipUseSubtitles: c.skipUseSubtitles !== false,
+    danmaku: normalizeDanmaku(c.danmaku),
     hasAccessToken: !!c.accessToken
   }
 }

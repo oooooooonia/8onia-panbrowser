@@ -50,7 +50,12 @@ export const api = {
   skipClearMark: (payload) => call('/api/skip/mark/clear', { method: 'POST', body: JSON.stringify(payload) }),
   skipMarks: (dir) => call(`/api/skip/marks?dir=${encodeURIComponent(dir || '')}`),
   skipClearCache: () => call('/api/skip/cache/clear', { method: 'POST' }),
-  skipStats: () => call('/api/skip/stats')
+  skipStats: () => call('/api/skip/stats'),
+  // ---- 观看历史（记住每个视频上次看到第几秒） ----
+  history: (p) => call(`/api/history?path=${encodeURIComponent(p || '')}`),
+  saveHistory: (p, pos, duration) =>
+    call('/api/history', { method: 'POST', body: JSON.stringify({ path: p, pos, duration }) }),
+  historyList: (limit) => call(`/api/history/list?limit=${Number(limit) || 50}`)
 }
 
 export const streamUrl = (p) => `${API}/api/stream?path=${encodeURIComponent(p)}`

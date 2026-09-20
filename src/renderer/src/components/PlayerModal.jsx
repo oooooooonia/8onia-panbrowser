@@ -6,7 +6,7 @@ import {
   X, Download, MonitorPlay, Link2, Copy, CircleAlert, File as FileIcon, Check, Captions, Loader2, ListVideo,
   SkipForward, Scissors, RotateCcw, Tag, MessageSquareText
 } from 'lucide-react'
-import { useApp } from '../store/app'
+import { useApp, flushDanmakuSave } from '../store/app'
 import {
   streamUrl, downloadUrl, copyText, api, subtitleUrl, subassUrl, embedSubUrl, danmakuUrl,
   libassWorkerUrl, libassWasmUrl, cjkFontUrl, isDesktop, report
@@ -154,6 +154,9 @@ export default function PlayerModal() {
   const openPlayer = useApp((s) => s.openPlayer)
   const playerMode = useApp((s) => s.playerMode)
   const setPlayerMode = useApp((s) => s.setPlayerMode)
+  // 弹幕设置（全局持久化在 store，跨会话记忆）
+  const danmakuOpt = useApp((s) => s.danmakuOpt)
+  const setDanmakuOpt = useApp((s) => s.setDanmakuOpt)
   const [err, setErr] = useState('')
   const [showLink, setShowLink] = useState(false)
   const [raw, setRaw] = useState('')
@@ -184,6 +187,10 @@ export default function PlayerModal() {
   // playerEpoch：ArtPlayer 每次重建后 +1，用于重建后重新把弹幕灌进新实例
   const [playerEpoch, setPlayerEpoch] = useState(0)
   const loadedDmRef = useRef(null) // 已装载的弹幕 path，避免重复 fetch
+  const epsRef = useRef([]) // 同目录剧集（上/下集按钮在 ArtPlayer 回调里读它，避免重建播放器）
+  // resumeRef：待续播位置。换字幕/换集都会重建 ArtPlayer，重建时 restoreRef 会被
+  // 「上个实例的 currentTime」覆盖；这里单独留一份带 path 的续播点，重建时优先用它兜底。
+  const resumeRef = useRef({ path: null, pos: 0 })
   const boxRef = useRef(null)
   const artRef = useRef(null)
   const restoreRef = useRef(0)
@@ -429,6 +436,70 @@ export default function PlayerModal() {
     }
   }
 
+  /* 观看历史：打开视频时恢复到上次看到的位置（服务端 userData/watch-history.json，桌面/局域网共用） */
+  useEffect(() => {
+    if (!isVideo || !player || !player.path) return undefined
+    let alive = true
+    ;(async () => {
+      try {
+        const r = await api.history(player.path)
+        if (!alive || !r || !r.entry) return
+        const pos = Number(r.entry.pos) || 0
+        const dur = Number(r.entry.duration) || 0
+        if (pos < 5) return // 才开头，不值当续播
+        if (dur > 0 && dur - pos < 20) return // 上次已看完 → 从头开始
+        // 关键：换个实例（选字幕会重建 ArtPlayer）也要能续上，所以既要写 restoreRef，
+        // 也要把「本视频的续播点」记到 resumeRef，重建时优先用它兜底。
+        resumeRef.current = { path: player.path, pos }
+        restoreRef.current = pos
+        const a = artRef.current
+        const aDur = a ? Number(a.duration) || 0 : 0
+        const atStart = !a || (Number(a.currentTime) || 0) < 1
+        // 时长未知时不要直接 seek（会被 clamp 到 0），交给 onMeta 里按 restoreRef 处理
+        if (a && aDur > 0 && pos < aDur - 1 && atStart) {
+          try { a.seek = pos } catch { /* ignore */ }
+        }
+        if (atStart) notify(`已从上一次位置 ${formatClock(pos)} 继续播放`, 'ok')
+        report(`history resume pos=${Math.round(pos)} dur=${Math.round(aDur)} atStart=${atStart} seekNow=${!!(a && aDur > 0 && pos < aDur - 1 && atStart)}`)
+      } catch { /* ignore */ }
+    })()
+    return () => {
+      alive = false
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [player && player.path, isVideo])
+
+  /* 同目录剧集列表（异步到达）→ 供播放器控制栏里的上/下集按钮读取 */
+  useEffect(() => {
+    epsRef.current = eps
+  }, [eps])
+
+  /* 上/下集按钮的边界态：没有上一集/下一集时压暗并禁用点击（列表异步到 + 播放器会重建，用 playerEpoch 触发重算） */
+  useEffect(() => {
+    const a = artRef.current
+    if (!a || !a.controls) return
+    const i = eps.findIndex((e) => e.path === (player && player.path))
+    const set = (el, on) => {
+      if (!el || !el.style) return
+      el.style.opacity = on ? '' : '.35'
+      el.style.pointerEvents = on ? '' : 'none'
+    }
+    set(a.controls.epPrev, i > 0)
+    set(a.controls.epNext, i >= 0 && i < eps.length - 1)
+  }, [eps, player && player.path, playerEpoch])
+
+  /* 退出应用 / 页面被隐藏（刷新、切走、关窗口）前，把还没落盘的弹幕设置立刻写回服务端 */
+  useEffect(() => {
+    const onHide = () => flushDanmakuSave()
+    window.addEventListener('pagehide', onHide)
+    window.addEventListener('beforeunload', onHide)
+    return () => {
+      window.removeEventListener('pagehide', onHide)
+      window.removeEventListener('beforeunload', onHide)
+      flushDanmakuSave()
+    }
+  }, [])
+
   /* ---------- OP/ED 检测：先快路径（手动标记 + 章节打标），再后台补字幕信号 ---------- */
   useEffect(() => {
     if (!isVideo || !videoKey) return undefined
@@ -557,9 +628,13 @@ export default function PlayerModal() {
     if (!videoKey || !boxRef.current) return undefined
     const box = boxRef.current
 
-    // 记录上个实例进度（换字幕/换集续播用），并清理旧实例
+    // 记录上个实例进度（换字幕/换集续播用），并清理旧实例。
+    // 注意：上个实例刚建好就被重建时它的 currentTime 还是 0，这时要回落到 resumeRef
+    // 里记的「本视频续播点」，否则「换了字幕就从 0 重播」会把续播吃掉。
     const prevArt = artRef.current
-    restoreRef.current = prevArt ? prevArt.currentTime || 0 : 0
+    const livePos = prevArt ? Number(prevArt.currentTime) || 0 : 0
+    const wantResume = resumeRef.current && resumeRef.current.path === player.path ? resumeRef.current.pos : 0
+    restoreRef.current = livePos > 1 ? livePos : wantResume
     if (prevArt) {
       try { prevArt.destroy() } catch { /* ignore */ }
       artRef.current = null
@@ -602,28 +677,17 @@ export default function PlayerModal() {
       }
     }
     // 弹幕：解析/渲染交给 artplayer-plugin-danmuku（内置 B 站 XML 解析，自己在 Blob Worker 里解析）。
-    // 控制件（开关 + 齿轮设置面板 + 发弹幕输入框）挂到页面里的「弹幕」条上；弹幕文字仍走播放器自身图层。
-    // 具体 xml 由下面的 effect 调 load() 灌入 —— 同目录列表是异步到的，且换字幕/换集时 ArtPlayer 会重建。
-    // 注意：mount 必须传「选择器字符串」，不能传 DOM 元素 —— ArtPlayer 会对 options 做
-    // JSON.stringify（选项快照），DOM 元素上的 __reactFiber 循环引用会直接把播放器初始化搞崩。
-    const dmMountSel = document.getElementById('pan-danmaku-mount') ? '#pan-danmaku-mount' : undefined
+    // 控制件（开关 + 齿轮设置面板 + 发弹幕输入框）走插件默认位置 —— 播放器控制栏内（全屏时同样在播放器里）。
+    // 设置项来自 store（全局保存、跨会话记忆）；具体 xml 由下面的 effect 调 load() 灌入。
     options.plugins = [
       artplayerPluginDanmuku({
         danmuku: [],
-        ...(dmMountSel ? { mount: dmMountSel } : {}),
         theme: 'dark',
         emitter: true, // 保留发弹幕输入框（仅本次播放内可见，本 app 不向 B 站投稿）
-        visible: true,
-        opacity: 0.8,
-        fontSize: 25,
-        speed: 5,
-        margin: [10, '25%'], // 下方留 25%，避免压住同目录字幕
-        modes: [0, 1, 2],
-        antiOverlap: true,
-        synchronousPlayback: false,
         heatmap: false,
         maxLength: 100,
-        lockTime: 5
+        lockTime: 5,
+        ...danmakuOpt
       })
     ]
     // 字幕统一委托给 libass 以得到 PotPlayer 观感；这里不设 ArtPlayer 原生字幕（仅在 libass 失败时降级）
@@ -641,6 +705,102 @@ export default function PlayerModal() {
     loadedDmRef.current = null // 新实例还没装弹幕，交给下面的 effect 灌
     setPlayerEpoch((n) => n + 1)
     report(`player created video=${String(videoKey || '').slice(-40)}`)
+
+    /* ---- 观看历史：节流保存播放位置（关播放器/换集/换字幕时强制存一次） ---- */
+    let lastHistAt = 0
+    const saveHistoryNow = (force) => {
+      try {
+        const vd = art && art.video
+        if (!vd) return
+        const pos = Number(vd.currentTime) || 0
+        const dur = Number(art.duration) || 0
+        if (pos < 1) return
+        const now = Date.now()
+        if (!force && now - lastHistAt < 5000) return
+        lastHistAt = now
+        // 已看到结尾：记 0，下次从头开始（否则会续在最后几秒）
+        const nearEnd = dur > 0 && dur - pos < 20
+        api.saveHistory(player.path, nearEnd ? 0 : pos, dur).catch(() => {})
+      } catch { /* ignore */ }
+    }
+    const onHistTick = () => saveHistoryNow(false)
+    const onHistPause = () => saveHistoryNow(true)
+    art.on('video:timeupdate', onHistTick)
+    art.on('video:pause', onHistPause)
+
+    /* ---- 弹幕设置全局保存：插件没有 change 事件，改为控件交互后 / 销毁前抓一次 option ---- */
+    const dmPlugin = art.plugins && art.plugins.artplayerPluginDanmuku
+    let dmSnapTimer = null
+    const snapshotDanmaku = () => {
+      if (!dmPlugin) return
+      try {
+        const o = dmPlugin.option || {}
+        const next = {
+          visible: o.visible !== false,
+          opacity: Number(o.opacity),
+          fontSize: o.fontSize,
+          speed: Number(o.speed),
+          margin: Array.isArray(o.margin) ? o.margin : [10, '25%'],
+          modes: Array.isArray(o.modes) ? o.modes : [0, 1, 2],
+          antiOverlap: o.antiOverlap !== false,
+          synchronousPlayback: !!o.synchronousPlayback,
+          color: o.color || '#FFFFFF',
+          mode: Number(o.mode) || 0
+        }
+        if (JSON.stringify(next) !== JSON.stringify(useApp.getState().danmakuOpt)) setDanmakuOpt(next)
+      } catch { /* ignore */ }
+    }
+    const onDanmakuUi = () => {
+      if (dmSnapTimer) clearTimeout(dmSnapTimer)
+      dmSnapTimer = setTimeout(snapshotDanmaku, 250)
+    }
+    box.addEventListener('pointerup', onDanmakuUi)
+    box.addEventListener('click', onDanmakuUi)
+
+    /* ---- 上/下集按钮（放进播放器控制栏；剧集列表异步到达，所以列表走 epsRef） ---- */
+    // 用播放器自带的图标，外观与原生控制条一致
+    const epIcon = (name) => {
+      try {
+        const el = art.icons && art.icons[name]
+        return (el && el.innerHTML) || ''
+      } catch {
+        return ''
+      }
+    }
+    const goEp = (delta) => {
+      const list = epsRef.current || []
+      const i = list.findIndex((e) => e.path === player.path)
+      if (i < 0) return
+      const t = list[i + delta]
+      if (!t) {
+        notify(delta < 0 ? '已经是第一集' : '已经是最后一集')
+        return
+      }
+      saveHistoryNow(true)
+      openPlayer({ kind: 'video', name: t.name, path: t.path, size: t.size })
+    }
+    // 原生位置：控制栏左侧组里 playAndPause 的 index 是 10、volume 是 20，
+    // 所以 9 / 11 正好把「上一集 / 下一集」插到播放暂停键两侧。
+    try {
+      art.controls.add({
+        name: 'epPrev',
+        position: 'left',
+        index: 9,
+        html: epIcon('arrowLeft'),
+        tooltip: '上一集',
+        click: () => goEp(-1)
+      })
+      art.controls.add({
+        name: 'epNext',
+        position: 'left',
+        index: 11,
+        html: epIcon('arrowRight'),
+        tooltip: '下一集',
+        click: () => goEp(1)
+      })
+    } catch (e) {
+      report('ep controls fail ' + e.message)
+    }
 
     // 容器尺寸变化（窗口缩放/信息条增删/进入全屏）时同步 libass 画布尺寸与进度条标记，
     // 否则画布仍是初始化时的大小，字幕会跑位或看起来“不见了”
@@ -844,6 +1004,11 @@ export default function PlayerModal() {
       }
       if (restoreRef.current > 1) {
         try { art.seek = restoreRef.current } catch { /* ignore */ }
+        report(`restore seek ${Math.round(restoreRef.current)}s`)
+        // 续播点已兑现 → 清掉，避免后续重建又跳回这里（用户可能已经往前看了）
+        if (resumeRef.current && resumeRef.current.path === player.path) {
+          resumeRef.current = { path: null, pos: 0 }
+        }
       }
       // 断流自愈时保留断点（万一这次重连又断，下一次仍能接上），正常情况用完即清
       if (!recovering) restoreRef.current = 0
@@ -1017,6 +1182,17 @@ export default function PlayerModal() {
 
     return () => {
       disposed = true
+      // 弹幕设置 + 观看进度：销毁前落盘（换集/换字幕/关播放器都会走到）
+      if (dmSnapTimer) clearTimeout(dmSnapTimer)
+      snapshotDanmaku()
+      flushDanmakuSave() // 关播放器/换集/换字幕就把弹幕设置落盘，不等退出应用
+      saveHistoryNow(true)
+      try {
+        box.removeEventListener('pointerup', onDanmakuUi)
+        box.removeEventListener('click', onDanmakuUi)
+        art.off('video:timeupdate', onHistTick)
+        art.off('video:pause', onHistPause)
+      } catch { /* ignore */ }
       paintRef.current = null
       skipBtnRef.current = null
       activeSegRef.current = null
@@ -1354,7 +1530,7 @@ export default function PlayerModal() {
         </div>
       ) : null}
 
-      {/* 弹幕条（在「字幕」条下方）：同目录 .xml 选择 + 自动匹配 + 插件自带设置面板/开关/输入框 */}
+      {/* 弹幕条（在「字幕」条下方）：同目录 .xml 选择 + 自动匹配；开关/设置面板/发弹幕输入框由插件挂在播放器控制栏内 */}
       {isVideo ? (
         <div className="sub-bar dm-bar">
           <span className="sub-bar-title">
@@ -1387,8 +1563,6 @@ export default function PlayerModal() {
               )
             })
           )}
-          {/* artplayer-plugin-danmuku 的控制件挂载点：开关 + 齿轮设置（透明度/字号/显示区域/速度/类型屏蔽/防重叠/同步）+ 发弹幕输入框 */}
-          <div id="pan-danmaku-mount" className="dm-mount" />
         </div>
       ) : null}
       </div>

@@ -4,13 +4,14 @@ import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import { DLINK_UA } from './api/baidu.js'
-import { loadConfig, saveConfig, publicConfig, clearCredentials, DEFAULTS } from './config.js'
+import { loadConfig, saveConfig, publicConfig, clearCredentials, normalizeDanmaku, DEFAULTS } from './config.js'
 import { scanAlist, importFromAlist } from './importers/alist.js'
 import { detectPotplayer, detectPlayers, openWithPlayer, openWithPotplayer } from './potplayer.js'
 import { SUB_EXTS, extOf, isSubtitleName, subtitleToVtt, detectSubtitleType, decodeSubtitle, srtToAss, subtitleToAss } from './subtitles.js'
 import { probeEmbeddedSubs, extractSubtitleText, ffmpegAvailable, localStreamUrl } from './media.js'
 import { createSkipService } from './skip.js'
 import { putAssText } from './asscache.js'
+import { getWatchEntry, setWatchEntry, listWatch } from './history.js'
 
 // 同目录弹幕文件（B 站弹幕 XML）：解析/渲染交给前端 artplayer-plugin-danmuku，服务端只负责列目录 + 代理取回
 const DANMAKU_EXTS = ['.xml']
@@ -420,6 +421,8 @@ export function startServer({ baidu }) {
         }
       }
       if (body.subBold !== undefined && body.subBold !== null) patch.subBold = !!body.subBold
+      // 弹幕外观（B 站 XML 弹幕插件）：整体对象，服务端归一化后落盘
+      if (body.danmaku !== undefined && body.danmaku !== null) patch.danmaku = normalizeDanmaku(body.danmaku)
       // OP/ED 跳过
       for (const k of ['skipEnabled', 'skipAutoOp', 'skipAutoEd', 'skipUseChapters', 'skipUseSubtitles']) {
         if (body[k] !== undefined && body[k] !== null) patch[k] = !!body[k]
@@ -858,6 +861,32 @@ export function startServer({ baidu }) {
 
     if (p === '/api/skip/stats' && method === 'GET') {
       return sendJson(res, 200, skip.stats())
+    }
+
+    /* ============ 观看历史（记住每个视频上次看到第几秒） ============ */
+    if (p === '/api/history' && method === 'GET') {
+      try {
+        return sendJson(res, 200, { ok: true, entry: getWatchEntry(q.get('path') || '') })
+      } catch (err) {
+        return sendJson(res, 200, { ok: false, error: err.message })
+      }
+    }
+
+    if (p === '/api/history' && method === 'POST') {
+      try {
+        const body = await readBody(req)
+        return sendJson(res, 200, { ok: true, entry: setWatchEntry(body.path, body.pos, body.duration) })
+      } catch (err) {
+        return sendJson(res, 200, { ok: false, error: err.message })
+      }
+    }
+
+    if (p === '/api/history/list' && method === 'GET') {
+      try {
+        return sendJson(res, 200, { ok: true, items: listWatch(Number(q.get('limit')) || 50) })
+      } catch (err) {
+        return sendJson(res, 200, { ok: false, error: err.message })
+      }
     }
 
     /* ============ 静态 UI ============ */
