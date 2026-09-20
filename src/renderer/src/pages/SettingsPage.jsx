@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import {
   HardDrive, MonitorPlay, Database, ScanLine, RefreshCw, FolderInput, KeyRound,
   ChevronRight, Check, ExternalLink, Wifi, Info, Plug, Trash2, Loader2, Copy, Captions, RotateCcw,
-  SkipForward, Scissors
+  SkipForward, Scissors, MessageSquareText
 } from 'lucide-react'
 import { useApp } from '../store/app'
 import { api, copyText, isDesktop } from '../lib/api'
@@ -64,8 +64,18 @@ export default function SettingsPage() {
   const [skipUseSubtitles, setSkipUseSubtitles] = useState(cfg.skipUseSubtitles !== false)
   const [skipMarks, setSkipMarks] = useState([])
   const [skipStats, setSkipStats] = useState(null)
+  const [dmCache, setDmCache] = useState(null)
+  const refreshDmCache = async () => {
+    try {
+      const r = await api.danmakuCache()
+      if (r && r.ok) setDmCache(r)
+    } catch {
+      /* ignore */
+    }
+  }
 
   useEffect(() => {
+    refreshDmCache()
     setClientId(cfg.clientId || '')
     setClientSecret(cfg.clientSecret || '')
     setRefreshToken(cfg.refreshToken || '')
@@ -483,6 +493,51 @@ export default function SettingsPage() {
       </section>
 
       {/* ---------- 手动凭证 ---------- */}
+      <section className="card">
+        <div className="section-title">
+          <MessageSquareText size={16} /> 弹幕缓存（弹弹play 识别 / 网盘 xml）
+        </div>
+        <div className="dim small">
+          识别并播放过一集后，该集弹幕会以 xml 存到本地缓存目录；再次观看直接读本地文件，不再重复识别/下载。
+        </div>
+        <div className="row">
+          <button
+            className="chip-btn"
+            onClick={async () => {
+              try {
+                const r = await api.clearDanmakuCache()
+                notify(`已清空弹幕缓存（删除 ${r.removed} 个文件）`, 'ok')
+                await refreshDmCache()
+              } catch (e) {
+                notify(e.message, 'error')
+              }
+            }}
+          >
+            <Trash2 size={13} /> 清空弹幕缓存
+          </button>
+          <button className="chip-btn" onClick={() => refreshDmCache()}>
+            <RotateCcw size={13} /> 刷新
+          </button>
+          {dmCache ? (
+            <span className="dim small">
+              共 {dmCache.total} 个文件 · {dmCache.size > 1048576 ? (dmCache.size / 1048576).toFixed(1) + ' MB' : Math.round(dmCache.size / 1024) + ' KB'} · {dmCache.dir}
+            </span>
+          ) : null}
+        </div>
+        {dmCache && dmCache.items.length ? (
+          <div className="found">
+            {dmCache.items.slice(0, 10).map((it) => (
+              <div key={it.file} className="found-item">
+                <span className="ellip">{it.file}</span>
+                <span className="dim small">
+                  {it.count ? it.count + ' 条 · ' : ''}
+                  {it.size > 1048576 ? (it.size / 1048576).toFixed(1) + ' MB' : Math.round(it.size / 1024) + ' KB'}
+                </span>
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </section>
       <section className="card">
         <div className="card-title click" onClick={() => setShowManual((v) => !v)}>
           <KeyRound size={16} /> 手动填写开放平台凭证 <ChevronRight size={14} className={showManual ? 'rot' : ''} />

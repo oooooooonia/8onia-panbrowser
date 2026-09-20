@@ -285,7 +285,12 @@ a { color: var(--accent); text-decoration: none; }
 .sub-chip.on i { color: var(--accent); border-color: rgba(77,159,255,.4); }
 
 /* 弹幕条（在字幕条下方）：文件选择沿用 sub-chip，右侧挂 artplayer-plugin-danmuku 的控制件 */
-.sub-bar.dm-bar { background: rgba(255, 214, 102, .035); }
+.sub-bar.dm-bar {
+  background: rgba(255, 214, 102, .035);
+  /* 允许换行：手动匹配的候选面板要独占一行，否则会被挤成竖列并盖住下面的行 */
+  flex-wrap: wrap;
+  align-items: center;
+}
 .sub-bar.dm-bar .sub-bar-title { color: #ffd766; }
 .sub-chip i.dm-auto { color: #ffd766; border-color: rgba(255, 215, 102, .45); }
 /* 插件控件已改挂到播放器控制栏（插件默认位置），弹幕条只负责文件选择 */
@@ -484,4 +489,91 @@ textarea.input { resize: vertical; }
   .player-tools { padding: 6px 10px calc(6px + env(safe-area-inset-bottom)); gap: 6px; }
   .player-head { padding: 6px 10px; }
   .mark-panel { padding: 6px 10px; gap: 5px; }
+}
+
+
+/* 弹幕 chip 上的小字（条数 / 体积） */
+.sub-chip .dm-count {
+  font-style: normal;
+  font-size: 11px;
+  opacity: 0.6;
+  margin-left: 5px;
+}
+
+/* ---- 弹幕：手动匹配（同目录没有 xml 时）---- */
+/* 自适应：全部用 flex + 百分比 + 省略号，窄屏（手机）也不溢出 */
+.sub-chip.dm-load {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.dm-pick {
+  flex: 1 1 100%;
+  min-width: 0;
+  width: 100%;
+  margin-top: 6px;
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+}
+.dm-pick-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: 12px;
+  opacity: 0.85;
+}
+.dm-pick-head > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dm-pick-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 34vh;
+  overflow-y: auto;
+}
+.dm-pick-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  color: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.dm-pick-item:hover {
+  background: rgba(77, 159, 255, 0.18);
+}
+.dm-pick-name {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dm-pick-ep {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dm-pick-item i {
+  flex: 0 0 auto;
+  font-style: normal;
+  font-size: 11px;
+  opacity: 0.6;
 }

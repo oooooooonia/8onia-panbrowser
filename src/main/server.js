@@ -13,6 +13,18 @@ import { createSkipService } from './skip.js'
 import { putAssText } from './asscache.js'
 import { getWatchEntry, setWatchEntry, listWatch } from './history.js'
 import { primaryFontFile, wideFontFile, subtitleFontInfo } from './fonts.js'
+import {
+  ddpReady,
+  danmakuXmlFor,
+  probeMatch,
+  danmakuCacheFile,
+  bookCachedDanmaku,
+  danmakuCacheList,
+  clearDanmakuCache,
+  cachedDanmakuCount,
+  cachedMatchInfo,
+  pickEpisode
+} from './dandanplay.js'
 
 // 同目录弹幕文件（B 站弹幕 XML）：解析/渲染交给前端 artplayer-plugin-danmuku，服务端只负责列目录 + 代理取回
 const DANMAKU_EXTS = ['.xml']
@@ -386,7 +398,7 @@ export function startServer({ baidu }) {
     if (p === '/api/config' && method === 'POST') {
       const body = await readBody(req)
       const patch = {}
-      const strFields = ['clientId', 'clientSecret', 'refreshToken', 'rootFolderPath', 'orderBy', 'orderDirection', 'potplayerPath', 'mpvPath', 'vlcPath', 'playerMode', 'ffmpegPath', 'port', 'hostBind', 'alistDir', 'subtitleFontPath']
+      const strFields = ['clientId', 'clientSecret', 'refreshToken', 'rootFolderPath', 'orderBy', 'orderDirection', 'potplayerPath', 'mpvPath', 'vlcPath', 'playerMode', 'ffmpegPath', 'port', 'hostBind', 'alistDir', 'subtitleFontPath', 'ddpAppId', 'ddpAppSecret']
       let credsChanged = false
       for (const k of strFields) {
         if (body[k] !== undefined && body[k] !== null) {
@@ -423,7 +435,7 @@ export function startServer({ baidu }) {
       // 弹幕外观（B 站 XML 弹幕插件）：整体对象，服务端归一化后落盘
       if (body.danmaku !== undefined && body.danmaku !== null) patch.danmaku = normalizeDanmaku(body.danmaku)
       // OP/ED 跳过
-      for (const k of ['skipEnabled', 'skipAutoOp', 'skipAutoEd', 'skipUseChapters', 'skipUseSubtitles']) {
+      for (const k of ['skipEnabled', 'skipAutoOp', 'skipAutoEd', 'skipUseChapters', 'skipUseSubtitles', 'ddpEnabled']) {
         if (body[k] !== undefined && body[k] !== null) patch[k] = !!body[k]
       }
       if (body.skipDelaySec !== undefined && body.skipDelaySec !== null) {
@@ -585,7 +597,7 @@ export function startServer({ baidu }) {
         // 同目录弹幕（B 站 XML）：供播放页“弹幕”条选择；一个视频通常配一份同名 xml
         const danmakus = entries
           .filter((e) => !e.isDir && isDanmakuName(e.name))
-          .map((e) => ({ name: e.name, path: e.path, ext: extOf(e.name), size: e.size }))
+          .map((e) => ({ name: e.name, path: e.path, ext: extOf(e.name), size: e.size, count: cachedDanmakuCount(e.path) }))
           .sort((a, b) => String(a.name).localeCompare(String(b.name), 'zh-CN', { numeric: true, sensitivity: 'base' }))
         // 同目录视频（剧集）：供播放页“剧集选择”使用，按数字大小优先排序
         const videos = entries
@@ -604,9 +616,15 @@ export function startServer({ baidu }) {
       try {
         const xmlPath = q.get('path') || ''
         if (!isDanmakuName(xmlPath)) throw new Error('不是弹幕文件（仅支持 .xml）')
-        const url = await baidu.dlinkForFile(xmlPath)
-        const buf = await fetchBuffer(url, { 'User-Agent': DLINK_UA, Accept: '*/*' }, 32 * 1024 * 1024)
-        const text = decodeSubtitle(buf)
+        // 命中本地弹幕缓存就直接用（弹幕 xml 不会变），省一次网盘下载；没命中才回源
+        let cached = null
+        try {
+          cached = fs.readFileSync(danmakuCacheFile(xmlPath), 'utf-8')
+        } catch {
+          cached = null
+        }
+        const text = cached || decodeSubtitle(await fetchBuffer(await baidu.dlinkForFile(xmlPath), { 'User-Agent': DLINK_UA, Accept: '*/*' }, 32 * 1024 * 1024))
+        bookCachedDanmaku(xmlPath, text)
         const body = Buffer.from(text, 'utf-8')
         res.writeHead(200, {
           'content-type': 'text/xml; charset=utf-8',
@@ -620,6 +638,102 @@ export function startServer({ baidu }) {
       }
     }
 
+    /* 弹幕（文件识别）：弹弹play /api/v2/match → episodeId → comment(JSON) → 转 B 站 XML */
+    if (p === '/api/danmaku/ddp' && method === 'GET') {
+      try {
+        const videoPath = q.get('path') || ''
+        if (!videoPath) throw new Error('缺少 path')
+        const c2 = loadConfig()
+        if (!ddpReady(c2)) throw new Error('弹弹play 未配置（设置页填写 AppId/AppSecret）')
+        const parent = videoPath.slice(0, videoPath.lastIndexOf('/')) || '/'
+        let name = videoPath.slice(videoPath.lastIndexOf('/') + 1)
+        let size = 0
+        try {
+          const entries = await baidu.listDir(parent, {})
+          const hit = entries.find((e) => e.path === videoPath || e.name === name)
+          if (hit) { name = hit.name; size = hit.size || 0 }
+        } catch { /* 列目录失败就只用文件名 */ }
+        // 把完整网盘路径交给识别接口：文件名里没有番剧名时靠目录名也能命中
+        const { xml, match } = await danmakuXmlFor(c2, { videoPath, hintName: videoPath, fileSize: size })
+        const body = Buffer.from(xml, 'utf-8')
+        res.writeHead(200, {
+          'content-type': 'text/xml; charset=utf-8',
+          'content-length': body.length,
+          'cache-control': 'no-store',
+          'x-ddp-episode': String(match.episodeId),
+          ...corsHeaders()
+        })
+        return res.end(body)
+      } catch (err) {
+        return sendJson(res, 200, { ok: false, error: err.message })
+      }
+    }
+
+    /* 手动选集：把候选里的 episodeId 记下来并缓存弹幕（同目录无 xml 时的手动匹配） */
+    if (p === '/api/danmaku/ddp/pick' && method === 'POST') {
+      try {
+        const body = await readBody(req)
+        const c2 = loadConfig()
+        if (!ddpReady(c2)) throw new Error('弹弹play 未配置（设置页填写 AppId/AppSecret）')
+        const videoPath = body.path || ''
+        if (!videoPath) throw new Error('缺少 path')
+        const parent = videoPath.slice(0, videoPath.lastIndexOf('/')) || '/'
+        let size = 0
+        try {
+          const entries = await baidu.listDir(parent, {})
+          const hit = entries.find((e) => e.path === videoPath || e.name === videoPath.split('/').pop())
+          if (hit) size = hit.size || 0
+        } catch { /* 用不到 size 也无所谓 */ }
+        const r = await pickEpisode(c2, {
+          videoPath,
+          episodeId: body.episodeId,
+          animeTitle: body.animeTitle,
+          episodeTitle: body.episodeTitle,
+          type: body.type,
+          hintName: videoPath,
+          fileSize: size
+        })
+        return sendJson(res, 200, { ok: true, match: r.match, count: r.match && r.match.count })
+      } catch (err) {
+        return sendJson(res, 200, { ok: false, error: err.message })
+      }
+    }
+
+    /* 弹弹play 识别结果（只读缓存，不打 API）：给 chip 显示「识别到哪部番的哪一集 / 多少条」 */
+    if (p === '/api/danmaku/ddp/info' && method === 'GET') {
+      try {
+        return sendJson(res, 200, { ok: true, info: cachedMatchInfo(q.get('path') || '') })
+      } catch (err) {
+        return sendJson(res, 200, { ok: false, error: err.message })
+      }
+    }
+    /* 弹幕缓存管理（设置页）：清单 / 清空 */
+    if (p === '/api/danmaku/cache' && method === 'GET') {
+      try {
+        return sendJson(res, 200, { ok: true, ...danmakuCacheList() })
+      } catch (err) {
+        return sendJson(res, 200, { ok: false, error: err.message })
+      }
+    }
+    if (p === '/api/danmaku/cache/clear' && method === 'POST') {
+      try {
+        return sendJson(res, 200, { ok: true, ...clearDanmakuCache() })
+      } catch (err) {
+        return sendJson(res, 200, { ok: false, error: err.message })
+      }
+    }
+    /* 只做识别（设置页/调试看候选），不返回弹幕正文 */
+    if (p === '/api/danmaku/ddp/match' && method === 'GET') {
+      try {
+        const c2 = loadConfig()
+        if (!ddpReady(c2)) throw new Error('弹弹play 未配置（设置页填写 AppId/AppSecret）')
+        const key = q.get('path') || q.get('name') || ''
+        const info = await probeMatch(c2, { fileName: key, fileSize: Number(q.get('size')) || 0 })
+        return sendJson(res, 200, { ok: true, ...info })
+      } catch (err) {
+        return sendJson(res, 200, { ok: false, error: err.message })
+      }
+    }
     if (p === '/api/subass' && method === 'GET') {
       try {
         const subPath = q.get('path') || ''

@@ -4,7 +4,7 @@ import artplayerPluginDanmuku from 'artplayer-plugin-danmuku'
 import SubtitlesOctopusModule from 'libass-wasm'
 import {
   X, Download, MonitorPlay, Link2, Copy, CircleAlert, File as FileIcon, Check, Captions, Loader2, ListVideo,
-  SkipForward, Scissors, RotateCcw, Tag, MessageSquareText
+  SkipForward, Scissors, RotateCcw, Tag, MessageSquareText, Search
 } from 'lucide-react'
 import { useApp, flushDanmakuSave } from '../store/app'
 import {
@@ -195,6 +195,12 @@ export default function PlayerModal() {
   /* ---- 弹幕（B 站 XML） ---- */
   // danmakus: 同目录 .xml 列表；danmaku: 当前选中项 {name,path}（null = 不加载）
   const [danmakus, setDanmakus] = useState([])
+  const [ddpInfo, setDdpInfo] = useState(null) // 弹弹play 识别到的番剧/集/条数（读缓存）
+  // 弹幕手动匹配（同目录没有 xml 时）：候选面板状态
+  const [ddpReady, setDdpReady] = useState(false) // 是否显示「加载弹幕」按钮
+  const [ddpOpen, setDdpOpen] = useState(false) // 候选面板是否展开
+  const [ddpCands, setDdpCands] = useState(null) // 识别候选
+  const [ddpBusy, setDdpBusy] = useState(false)
   const [danmaku, setDanmaku] = useState(null)
   // playerEpoch：ArtPlayer 每次重建后 +1，用于重建后重新把弹幕灌进新实例
   const [playerEpoch, setPlayerEpoch] = useState(0)
@@ -205,7 +211,12 @@ export default function PlayerModal() {
   const resumeRef = useRef({ path: null, pos: 0 })
   const boxRef = useRef(null)
   const artRef = useRef(null)
+  // 重建播放器（换集/换字幕）前是否处于「网页全屏」：重建后要恢复，否则全屏类残留在页面上会卡住
+  const fsWebRef = useRef(false)
   const restoreRef = useRef(0)
+  // lastPosRef：本视频最后一次的真实播放位置（timeupdate 持续刷新）。
+  // 重建时用它兜底续播，避免「恰好赶在 seek 生效前重建 → currentTime 仍为 0 → 掉回 00:00」。
+  const lastPosRef = useRef({ path: null, pos: 0 })
   const octRef = useRef(null)
   const overlayRef = useRef(null)
   // skipDataRef：供 ArtPlayer 事件回调读取（避免重建播放器）
@@ -344,18 +355,50 @@ export default function PlayerModal() {
         report(`subs found=${fileSubs.length} videos=${eps.length} for ${String(player.name).slice(-40)}`)
         // 同目录弹幕：自动匹配「归一化后与视频同名」的那份 xml（VCB 这类一集一份弹幕的文件名与视频完全一致）
         const dms = (r && r.danmakus) || []
-        if (dms.length) {
-          setDanmakus(dms)
-          const dwKey = normSubKey(player.name)
-          const dmPick =
-            dms.find((d) => normSubKey(d.name) === dwKey) ||
-            dms.find((d) => String(d.name).replace(/\.[^.]+$/, '').toLowerCase() === String(player.name).replace(/\.[^.]+$/, '').toLowerCase()) ||
-            null
-          setDanmaku(dmPick)
-          report(`danmaku found=${dms.length} picked=${dmPick ? dmPick.name.slice(-28) : 'none'}`)
-        } else {
-          report('danmaku found=0')
+        const stripExt = (s) => {
+          const t = String(s)
+          const i = t.lastIndexOf('.')
+          return i > 0 ? t.slice(0, i) : t
         }
+        let dmPick = null
+        if (dms.length) {
+          const dwKey = normSubKey(player.name)
+          dmPick =
+            dms.find((d) => normSubKey(d.name) === dwKey) ||
+            dms.find((d) => stripExt(d.name).toLowerCase() === stripExt(player.name).toLowerCase()) ||
+            null
+        }
+        // 弹幕优先级：同目录 xml > 弹弹play。
+        // 弹弹play 这里分两种：已经手动匹配过（缓存里有映射）→ 自动加载；没匹配过 → 显示「加载弹幕」让用户手动选。
+        const ddpOn = !!(server && server.config && server.config.ddpEnabled && server.config.ddpConfigured)
+        let ddpSrc = null
+        setDdpReady(false)
+        if (ddpOn && !dmPick) {
+          try {
+            const ri = await api.ddpInfo(player.path)
+            if (!alive) return
+            if (ri && ri.ok && ri.info) {
+              setDdpInfo(ri.info)
+              ddpSrc = {
+                name: ri.info.animeTitle || '弹弹play 识别',
+                path: 'ddp:' + player.path,
+                ext: '.xml',
+                size: 0,
+                count: ri.info.count || 0,
+                ddp: true
+              }
+            } else {
+              setDdpInfo(null)
+              setDdpReady(true)
+            }
+          } catch {
+            if (alive) setDdpReady(true)
+          }
+        }
+        setDanmakus(ddpSrc ? [...dms, ddpSrc] : dms)
+        const dmFinal = dmPick || ddpSrc
+        setDanmaku(dmFinal)
+        report('danmaku local=' + dms.length + ' ddp=' + (ddpSrc ? 1 : 0) + ' manual=' + (ddpOn && !dmPick && !ddpSrc ? 1 : 0) + ' picked=' + (dmFinal ? dmFinal.name : 'none'))
       } catch { /* ignore */ }
       try {
         const probe = await api.embedProbe(player.path)
@@ -425,6 +468,17 @@ export default function PlayerModal() {
     loadedDmRef.current = want
     try {
       dm.load(want ? danmakuUrl(want) : [])
+      // 识别源：弹幕拉完后（缓存已写入）再把识别结果读回来刷新 chip 文案
+      if (want && String(want).startsWith('ddp:')) {
+        setTimeout(() => {
+          api
+            .ddpInfo(player.path)
+            .then((ri) => {
+              if (ri && ri.ok && ri.info) setDdpInfo(ri.info)
+            })
+            .catch(() => {})
+        }, 2500)
+      }
       report(`danmaku load=${want ? want.slice(-28) : 'off'}`)
     } catch (e) {
       report(`danmaku load fail ${e.message}`)
@@ -446,7 +500,55 @@ export default function PlayerModal() {
     } catch (e) {
       notify('弹幕加载失败：' + e.message, 'error')
     }
+
   }
+
+  /* 手动匹配弹幕（同目录没有 xml 时用）：拉候选 → 用户选 → 缓存下来并立即加载 */
+  const openDdpCandidates = async () => {
+    setDdpOpen(true)
+    setDdpBusy(true)
+    try {
+      const r = await api.ddpMatch(player.path)
+      setDdpCands(r && r.ok ? r : null)
+    } catch {
+      setDdpCands(null)
+    } finally {
+      setDdpBusy(false)
+    }
+  }
+  const chooseDdp = async (c) => {
+    setDdpBusy(true)
+    try {
+      const r = await api.ddpPick({
+        path: player.path,
+        episodeId: c.episodeId,
+        animeTitle: c.animeTitle,
+        episodeTitle: c.episodeTitle,
+        type: c.type
+      })
+      if (!r || !r.ok) throw new Error((r && r.error) || '加载失败')
+      const src = {
+        name: c.animeTitle || '弹弹play 识别',
+        path: 'ddp:' + player.path,
+        ext: '.xml',
+        size: 0,
+        count: r.count || 0,
+        ddp: true
+      }
+      setDdpCands(null)
+      setDdpOpen(false)
+      setDdpReady(false)
+      setDdpInfo({ animeTitle: c.animeTitle, episodeTitle: c.episodeTitle, count: r.count || 0 })
+      setDanmakus((prev) => [...prev.filter((x) => !x.ddp), src])
+      switchDanmaku(src)
+      notify(`已匹配弹幕：${c.animeTitle} ${c.episodeTitle}`, 'ok')
+    } catch (e) {
+      notify('弹幕匹配失败：' + e.message, 'error')
+    } finally {
+      setDdpBusy(false)
+    }
+  }
+
 
   /* 观看历史：打开视频时恢复到上次看到的位置（服务端 userData/watch-history.json，桌面/局域网共用） */
   useEffect(() => {
@@ -639,6 +741,10 @@ export default function PlayerModal() {
   useEffect(() => {
     if (!videoKey || !boxRef.current) return undefined
     const box = boxRef.current
+    // 手机端：提前把这条视频的直链解析好并登记给原生流代理，减少首个请求的等待
+    try {
+      if (window.__PAN_MOBILE__ && window.__PAN_PREPARE__) window.__PAN_PREPARE__(player.path)
+    } catch { /* ignore */ }
 
     // 记录上个实例进度（换字幕/换集续播用），并清理旧实例。
     // 注意：上个实例刚建好就被重建时它的 currentTime 还是 0，这时要回落到 resumeRef
@@ -646,7 +752,9 @@ export default function PlayerModal() {
     const prevArt = artRef.current
     const livePos = prevArt ? Number(prevArt.currentTime) || 0 : 0
     const wantResume = resumeRef.current && resumeRef.current.path === player.path ? resumeRef.current.pos : 0
-    restoreRef.current = livePos > 1 ? livePos : wantResume
+    const lastPos = lastPosRef.current && lastPosRef.current.path === player.path ? lastPosRef.current.pos : 0
+    // 优先级：上个实例的实时位置 > 本会话记录的最后位置 > 服务端续播点
+    restoreRef.current = livePos > 1 ? livePos : lastPos > 1 ? lastPos : wantResume
     if (prevArt) {
       try { prevArt.destroy() } catch { /* ignore */ }
       artRef.current = null
@@ -695,11 +803,13 @@ export default function PlayerModal() {
       artplayerPluginDanmuku({
         danmuku: [],
         theme: 'dark',
-        emitter: true, // 保留发弹幕输入框（仅本次播放内可见，本 app 不向 B 站投稿）
         heatmap: false,
         maxLength: 100,
         lockTime: 5,
-        ...danmakuOpt
+        ...danmakuOpt,
+        // 只隐藏「发弹幕输入框」：本 app 不向 B 站投稿，输入框没用。
+        // 弹幕开关、齿轮设置面板、弹幕渲染全部保留。放在 ...danmakuOpt 之后，避免被配置覆盖。
+        emitter: false,
       })
     ]
     // 字幕统一委托给 libass 以得到 PotPlayer 观感；这里不设 ArtPlayer 原生字幕（仅在 libass 失败时降级）
@@ -714,6 +824,16 @@ export default function PlayerModal() {
       return undefined
     }
     artRef.current = art
+    // 重建前处于网页全屏 → 恢复（换集后仍留在全屏，不卡页面）
+    if (fsWebRef.current) {
+      fsWebRef.current = false
+      const restoreFsWeb = () => {
+        try { art.fullscreenWeb = true } catch { /* ignore */ }
+      }
+      // ready 可能已错过（重建时视频往往已就绪），所以 once 和定时兜底都挂上
+      try { art.once("ready", restoreFsWeb) } catch { /* ignore */ }
+      setTimeout(restoreFsWeb, 500)
+    }
     loadedDmRef.current = null // 新实例还没装弹幕，交给下面的 effect 灌
     setPlayerEpoch((n) => n + 1)
     report(`player created video=${String(videoKey || '').slice(-40)}`)
@@ -727,6 +847,7 @@ export default function PlayerModal() {
         const pos = Number(vd.currentTime) || 0
         const dur = Number(art.duration) || 0
         if (pos < 1) return
+        lastPosRef.current = { path: player.path, pos } // 重建兜底用（在节流判断之前刷新）
         const now = Date.now()
         if (!force && now - lastHistAt < 5000) return
         lastHistAt = now
@@ -875,10 +996,22 @@ export default function PlayerModal() {
         const libassSrcUrl = cur.url
         // alist 同款：worker 脚本经 Blob 重写 wasm 绝对路径后作为 workerUrl
         workerBlobUrl = await buildWorkerBlobUrl()
+        // 手机端：/api/* 由页面内 shim 接管，libass 的 worker（blob）里发不出这个请求（相对地址解析不了），
+        // 所以先在页面里把字幕文本取回来，用 subContent 直接交给 libass。
+        let mobileSubContent = null
+        if (window.__PAN_MOBILE__) {
+          try {
+            const r = await fetch(libassSrcUrl)
+            mobileSubContent = await r.text()
+          } catch (e) {
+            report("mobile subContent fetch 失败: " + fmtErr(e))
+          }
+        }
         let oct = null
         const opts = {
           video: art.video,
-          subUrl: libassSrcUrl,
+          subUrl: window.__PAN_MOBILE__ ? undefined : libassSrcUrl,
+          subContent: mobileSubContent || undefined,
           workerUrl: workerBlobUrl,
           debug: window.__PANBOX_LIBASS_DEBUG__ === true,
           onReady: () => {
@@ -1034,10 +1167,9 @@ export default function PlayerModal() {
       if (restoreRef.current > 1) {
         try { art.seek = restoreRef.current } catch { /* ignore */ }
         report(`restore seek ${Math.round(restoreRef.current)}s`)
-        // 续播点已兑现 → 清掉，避免后续重建又跳回这里（用户可能已经往前看了）
-        if (resumeRef.current && resumeRef.current.path === player.path) {
-          resumeRef.current = { path: null, pos: 0 }
-        }
+        // 不要清 resumeRef：重建可能恰好发生在 seek 生效之前（此刻 currentTime 仍为 0），
+        // 清掉会让下一次重建直接掉回 00:00；留着最坏也只是回到旧续播点，比 0 好。
+        lastPosRef.current = { path: player.path, pos: restoreRef.current }
       }
       // 断流自愈时保留断点（万一这次重连又断，下一次仍能接上），正常情况用完即清
       if (!recovering) restoreRef.current = 0
@@ -1241,6 +1373,15 @@ export default function PlayerModal() {
       try {
         art.video.removeEventListener('loadedmetadata', onMeta)
         art.video.removeEventListener('error', onVideoError)
+      } catch { /* ignore */ }
+      // 关键：销毁前先退出「网页全屏」。ArtPlayer 的网页全屏是往 html/body 加类的 CSS 全屏，
+      // 直接 destroy 会把全屏状态留在页面上 —— 桌面表现为「切集后卡在全屏布局不动」，
+      // 手机表现为「全屏时返回卡在视频界面（横屏 + 系统栏隐藏回不来）」。
+      try {
+        if (art.fullscreenWeb) {
+          fsWebRef.current = true
+          art.fullscreenWeb = false
+        }
       } catch { /* ignore */ }
       try { art.destroy() } catch { /* ignore */ }
       if (artRef.current === art) artRef.current = null
@@ -1586,30 +1727,89 @@ export default function PlayerModal() {
           <button className={`sub-chip ${!danmaku ? 'on' : ''}`} onClick={() => switchDanmaku(null)}>
             关闭
           </button>
-          {danmakus.length === 0 ? (
+          {danmakus.filter((d) => !d.ddp).length === 0 ? (
             <span className="dim small">同目录未找到 .xml 弹幕（B 站格式）</span>
-          ) : (
-            danmakus.map((d) => {
+          ) : null}
+          {danmakus.map((d) => {
               const on = !!(danmaku && danmaku.path === d.path)
               const base = String(player.name).replace(/\.[^.]+$/, '')
               const raw = String(d.name).replace(/\.[^.]+$/, '')
               // 标签：优先取集数标记（[01] / [OVA] / [SP1]），取不到就回落到去掉扩展名的文件名
+              // 弹弹play 识别源：识别一次后显示识别到的番剧名（读的是缓存，不打 API）
+              const ddpTitle = d.ddp && ddpInfo ? ddpInfo.animeTitle : ''
               const ep = String(d.name).match(/\[(\d{1,3}(?:v\d)?|SP\d*|OVA\d*|NC(?:OP|ED)\d*|OP\d*|ED\d*)\]/i)
-              const label = ep ? ep[1] : raw === base ? '同名' : raw
+              const label = d.ddp ? ddpTitle || d.name : ep ? ep[1] : raw === base ? '同名' : raw
               const auto = normSubKey(d.name) === normSubKey(player.name)
               return (
                 <button
                   key={d.path}
                   className={`sub-chip ${on ? 'on' : ''}`}
                   onClick={() => switchDanmaku(d)}
-                  title={`${d.name}\n${formatSize(d.size)}`}
+                  title={
+                    d.ddp
+                      ? `${ddpTitle || '弹弹play 识别（首次播放时识别）'}${ddpInfo && ddpInfo.episodeTitle ? '\n' + ddpInfo.episodeTitle : ''}\n来源：弹弹play 文件识别`
+                      : `${d.name}\n${formatSize(d.size)}`
+                  }
                 >
                   <span className="ellip">{label}</span>
-                  {auto ? <i className="dm-auto" title="与当前视频同名（自动匹配）">匹配</i> : <i>XML</i>}
+                  {d.ddp ? (
+                    <i title="弹弹play 文件识别">识别</i>
+                  ) : auto ? (
+                    <i className="dm-auto" title="与当前视频同名（自动匹配）">匹配</i>
+                  ) : (
+                    <i>XML</i>
+                  )}
+                  <em className="dm-count">
+                    {(d.ddp && ddpInfo && ddpInfo.count ? ddpInfo.count : d.count)
+                      ? (d.ddp && ddpInfo && ddpInfo.count ? ddpInfo.count : d.count) + ' 条'
+                      : d.size
+                        ? formatSize(d.size)
+                        : ''}
+                  </em>
                 </button>
               )
-            })
-          )}
+            })}
+          {ddpReady ? (
+            <button
+              className="sub-chip dm-load"
+              onClick={() => (ddpOpen ? setDdpOpen(false) : openDdpCandidates())}
+              title="同目录没有弹幕 xml：用弹弹play 文件识别，手动选择要匹配的番剧/集"
+            >
+              <Search size={13} /> {ddpOpen ? '收起候选' : '加载弹幕'}
+            </button>
+          ) : null}
+          {ddpOpen ? (
+            <div className="dm-pick">
+              <div className="dm-pick-head">
+                <span>选择要匹配的弹幕（弹弹play 文件识别，按相关度排序）</span>
+                <button className="chip-btn" onClick={() => setDdpOpen(false)}>
+                  关闭
+                </button>
+              </div>
+              {ddpBusy ? (
+                <div className="dim small">识别中…</div>
+              ) : ddpCands && (ddpCands.candidates || []).length ? (
+                <div className="dm-pick-list">
+                  {ddpCands.candidates.map((c) => (
+                    <button
+                      key={String(c.episodeId)}
+                      className="dm-pick-item"
+                      onClick={() => chooseDdp(c)}
+                      title={`${c.animeTitle}\n${c.episodeTitle || ''}\n${c.type || ''}`}
+                    >
+                      <span className="dm-pick-name">{c.animeTitle}</span>
+                      <span className="dm-pick-ep dim small">{c.episodeTitle}</span>
+                      <i>{c.type}</i>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="dim small">
+                  没有识别到候选。文件名里缺少番剧名时识别会不靠谱（可以把上级目录名一起带上）。
+                </div>
+              )}
+            </div>
+          ) : null}
         </div>
       ) : null}
       </div>

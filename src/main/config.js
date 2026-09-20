@@ -44,6 +44,13 @@ export const DEFAULTS = {
   skipUseSubtitles: true, // 使用字幕信号（ASS 样式名/歌词块、跨集重复文本）
   // ---- 弹幕（B 站 XML）外观与行为：artplayer-plugin-danmuku 的 option 子集 ----
   // 存 userData/config.json：桌面版 / npm run dev / 手机局域网访问同一个服务 → 共用同一份
+  // ---- 弹弹play 开放弹幕网络（文件识别匹配弹幕）----
+  // 弹幕优先级：同目录 xml > 文件识别结果。AppId/AppSecret 在设置页填写。
+  ddpEnabled: true,
+  ddpAppId: '',
+  ddpAppSecret: '',
+  ddpAppSecretEnc: '', // 混淆后的 AppSecret（落盘用；运行时解码到 ddpAppSecret）
+
   danmaku: {
     visible: true, // 弹幕层开关
     opacity: 0.8, // 透明度 0~1
@@ -61,6 +68,35 @@ export const DEFAULTS = {
   subtitleFontPath: ''
 }
 
+/**
+ * 轻量混淆（不是加密）：避免 AppSecret 以明文出现在配置文件/打包产物里。
+ * 依据弹弹play 安全建议：客户端不应明文硬编码 AppSecret，发布前应做混淆；
+ * 开源代码里用占位符，真正的密钥在构建/首次配置时写入（本项目走设置页或 resources/default-config.json 种子）。
+ * 注意：这只是「防明文泄露」级别的混淆，能拿到代码的人仍可逆出密钥 —— 真要彻底保密必须自建转发服务。
+ */
+const OBF_KEY = 'PanBrowser::ddp::v1::8onia'
+export function obfuscateSecret(plain) {
+  const s = String(plain || '')
+  if (!s) return ''
+  const bytes = Buffer.from(s, 'utf-8')
+  const out = Buffer.allocUnsafe(bytes.length)
+  for (let i = 0; i < bytes.length; i++) out[i] = bytes[i] ^ OBF_KEY.charCodeAt(i % OBF_KEY.length)
+  return 'obf1:' + out.toString('base64')
+}
+export function deobfuscateSecret(enc) {
+  const s = String(enc || '')
+  if (!s) return ''
+  if (!s.startsWith('obf1:')) return s // 兼容：早期版本或用户手填的明文
+  try {
+    const bytes = Buffer.from(s.slice(5), 'base64')
+    const out = Buffer.allocUnsafe(bytes.length)
+    for (let i = 0; i < bytes.length; i++) out[i] = bytes[i] ^ OBF_KEY.charCodeAt(i % OBF_KEY.length)
+    return out.toString('utf-8')
+  } catch {
+    return ''
+  }
+}
+
 let cache = null
 
 export function configFile() {
@@ -68,7 +104,7 @@ export function configFile() {
 }
 
 // 初始令牌文件（个人自用；refresh_token 一次性，失效时在设置页重新导入/粘贴即可）
-const SEED_KEYS = ['clientId', 'clientSecret', 'refreshToken', 'accessToken', 'accessTokenExpiresAt', 'rootFolderPath']
+const SEED_KEYS = ['clientId', 'clientSecret', 'refreshToken', 'accessToken', 'accessTokenExpiresAt', 'rootFolderPath', 'ddpEnabled', 'ddpAppId', 'ddpAppSecretEnc']
 function readSeedConfig() {
   try {
     const file = path.join(__dirname, '../../resources/default-config.json')
@@ -92,6 +128,8 @@ export function loadConfig() {
     saved = readSeedConfig()
   }
   cache = { ...DEFAULTS, ...saved }
+  // 混淆存储 → 运行时解码成明文（只存在内存里）
+  if (cache.ddpAppSecretEnc) cache.ddpAppSecret = deobfuscateSecret(cache.ddpAppSecretEnc)
   return cache
 }
 
@@ -100,7 +138,13 @@ export function saveConfig(patch) {
   const cfg = loadConfig()
   Object.assign(cfg, patch)
   try {
-    fs.writeFileSync(configFile(), JSON.stringify(cfg, null, 2), 'utf-8')
+    // 落盘时把 AppSecret 换成混淆值，配置文件里不留明文
+    const out = { ...cfg }
+    if (out.ddpAppSecret) {
+      out.ddpAppSecretEnc = obfuscateSecret(out.ddpAppSecret)
+      out.ddpAppSecret = ''
+    }
+    fs.writeFileSync(configFile(), JSON.stringify(out, null, 2), 'utf-8')
   } catch (err) {
     console.error('保存配置失败：', err.message)
   }
@@ -176,6 +220,11 @@ export function publicConfig() {
     skipUseChapters: c.skipUseChapters !== false,
     skipUseSubtitles: c.skipUseSubtitles !== false,
     danmaku: normalizeDanmaku(c.danmaku),
+    ddpEnabled: c.ddpEnabled !== false,
+    ddpAppId: c.ddpAppId || '',
+    ddpAppSecretEncSet: !!c.ddpAppSecretEnc,
+    ddpConfigured: !!(c.ddpAppId && c.ddpAppSecret),
+    ddpAppSecretSet: !!c.ddpAppSecret,
     subtitleFontPath: c.subtitleFontPath || '',
     hasAccessToken: !!c.accessToken
   }
