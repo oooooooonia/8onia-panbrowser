@@ -12,6 +12,7 @@ import { probeEmbeddedSubs, extractSubtitleText, ffmpegAvailable, localStreamUrl
 import { createSkipService } from './skip.js'
 import { putAssText } from './asscache.js'
 import { getWatchEntry, setWatchEntry, listWatch } from './history.js'
+import { primaryFontFile, wideFontFile, subtitleFontInfo } from './fonts.js'
 
 // 同目录弹幕文件（B 站弹幕 XML）：解析/渲染交给前端 artplayer-plugin-danmuku，服务端只负责列目录 + 代理取回
 const DANMAKU_EXTS = ['.xml']
@@ -21,15 +22,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const RENDERER_DIR = path.join(__dirname, '../renderer') // out/renderer
 // libass-wasm(SubtitlesOctopus) 渲染资产目录（worker + wasm + 主库；随包打包进 resources/vendor/libass）
 const LIBASS_JS_DIR = path.join(__dirname, '../../resources/vendor/libass')
-// 本地 CJK 字体候选（ASS 中文渲染兜底）
-const CJK_FONT_CANDIDATES = [
-  'C:\\Windows\\Fonts\\msyh.ttc',
-  'C:\\Windows\\Fonts\\msyhbd.ttc',
-  'C:\\Windows\\Fonts\\simhei.ttf',
-  'C:\\Windows\\Fonts\\simsun.ttc',
-  'C:\\Windows\\Fonts\\Deng.ttf',
-  'C:\\Windows\\Fonts\\Dengb.ttf'
-]
+// 字幕字体候选与解析见 fonts.js（圆角中文字体优先，系统缺失则退到全局字体）
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -381,6 +374,12 @@ export function startServer({ baidu }) {
       } catch {
         out.potplayer = { found: false }
       }
+      try {
+        // 全局字幕字体（供渲染层构造 libass 的 availableFonts / fallbackFont）
+        out.subtitleFont = subtitleFontInfo()
+      } catch {
+        out.subtitleFont = null
+      }
       return sendJson(res, 200, out)
     }
 
@@ -704,9 +703,10 @@ export function startServer({ baidu }) {
       })
       return res.end(data)
     }
-    if ((p === '/vendor/fonts/cjk' && (method === 'GET' || method === 'HEAD'))) {
-      const font = CJK_FONT_CANDIDATES.find((f) => fs.existsSync(f))
-      if (!font) return sendJson(res, 404, { ok: false, error: 'no cjk font' })
+    // 全局字幕字体（圆角中文字体优先）与完整字库（缺字回退）
+    if ((p === '/vendor/fonts/cjk' || p === '/vendor/fonts/yahei') && (method === 'GET' || method === 'HEAD')) {
+      const font = p === '/vendor/fonts/yahei' ? wideFontFile() : primaryFontFile()
+      if (!font || !fs.existsSync(font)) return sendJson(res, 404, { ok: false, error: 'no font' })
       const ext = path.extname(font).toLowerCase()
       res.writeHead(200, {
         'content-type': ext === '.ttf' ? 'font/ttf' : ext === '.otf' ? 'font/otf' : 'font/ttf',

@@ -74,6 +74,8 @@ export const danmakuUrl = (p) => `${API}/api/danmaku?path=${encodeURIComponent(p
 export const libassWorkerUrl = () => `${API}/vendor/libass/subtitles-octopus-worker.js`
 export const libassWasmUrl = () => `${API}/vendor/libass/subtitles-octopus-worker.wasm`
 export const cjkFontUrl = () => `${API}/vendor/fonts/cjk`
+/** 完整字库（微软雅黑）：缺字回退 + ASS 里「微软雅黑」族名的映射 */
+export const yaheiFontUrl = () => `${API}/vendor/fonts/yahei`
 
 /** 复制文本到剪贴板 */
 export async function copyText(text) {

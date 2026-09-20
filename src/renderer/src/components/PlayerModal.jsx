@@ -9,7 +9,7 @@ import {
 import { useApp, flushDanmakuSave } from '../store/app'
 import {
   streamUrl, downloadUrl, copyText, api, subtitleUrl, subassUrl, embedSubUrl, danmakuUrl,
-  libassWorkerUrl, libassWasmUrl, cjkFontUrl, isDesktop, report
+  libassWorkerUrl, libassWasmUrl, cjkFontUrl, yaheiFontUrl, isDesktop, report
 } from '../lib/api'
 import { formatSize, formatClock } from '../lib/format'
 
@@ -883,7 +883,20 @@ export default function PlayerModal() {
             fallbackToTextVtt()
           }
         }
-        if (await cjkFontAvailable()) opts.fallbackFont = cjkFontUrl()
+        // 全局字幕字体：主进程在系统里挑的圆角中文字体（方正准圆 → 方正兰亭圆 → 华文圆体 → 幼圆），
+        // 系统里没有圆体就用全局兜底字体。浏览器 libass 看不到系统字体，所以这些字体名必须在这里
+        // 显式登记，否则 ASS 指定的「方正准圆_GBK」「微软雅黑」一个都匹配不上（只剩 fallback）。
+        const sf = (server && server.subtitleFont) || null
+        if (sf && sf.roundedNames) {
+          const map = {}
+          for (const n of sf.roundedNames) if (n) map[String(n).toLowerCase()] = cjkFontUrl()
+          for (const n of sf.wideNames || []) if (n) map[String(n).toLowerCase()] = yaheiFontUrl()
+          opts.availableFonts = map
+          opts.fallbackFont = cjkFontUrl()
+          report('subtitle font ' + sf.family + (sf.fallback ? ' (global fallback)' : sf.installed ? ' (installed)' : '') + ' names=' + Object.keys(map).length)
+        } else if (await cjkFontAvailable()) {
+          opts.fallbackFont = cjkFontUrl()
+        }
         oct = new SO(opts)
         if (disposed) {
           try { oct.dispose() } catch { /* ignore */ }
