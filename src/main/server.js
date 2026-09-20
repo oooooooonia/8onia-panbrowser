@@ -12,7 +12,7 @@ import { probeEmbeddedSubs, extractSubtitleText, ffmpegAvailable, localStreamUrl
 import { createSkipService } from './skip.js'
 import { putAssText } from './asscache.js'
 import { getWatchEntry, setWatchEntry, listWatch } from './history.js'
-import { primaryFontFile, wideFontFile, subtitleFontInfo, fileByToken } from './fonts.js'
+import { primaryFontFile, wideFontFile, subtitleFontInfo } from './fonts.js'
 
 // 同目录弹幕文件（B 站弹幕 XML）：解析/渲染交给前端 artplayer-plugin-danmuku，服务端只负责列目录 + 代理取回
 const DANMAKU_EXTS = ['.xml']
@@ -717,20 +717,6 @@ export function startServer({ baidu }) {
       })
       if (method === 'HEAD') return res.end()
       return fs.createReadStream(font).pipe(res)
-    }
-    // 具体字体文件（内置字幕组字体）：k 是字体指纹 token，服务端白名单解析，不接受任意路径
-    if (p === '/vendor/fonts/f' && (method === 'GET' || method === 'HEAD')) {
-      const file = fileByToken(q.get('k'))
-      if (!file || !fs.existsSync(file)) return sendJson(res, 404, { ok: false, error: 'unknown font' })
-      debugLog('font serve f -> ' + path.basename(file))
-      res.writeHead(200, {
-        'content-type': path.extname(file).toLowerCase() === '.otf' ? 'font/otf' : 'font/ttf',
-        'content-length': fs.statSync(file).size,
-        'cache-control': 'public, max-age=86400',
-        ...corsHeaders()
-      })
-      if (method === 'HEAD') return res.end()
-      return fs.createReadStream(file).pipe(res)
     }
 
     /* ============ 字幕真实格式探测（libass/播放器分流用） ============ */

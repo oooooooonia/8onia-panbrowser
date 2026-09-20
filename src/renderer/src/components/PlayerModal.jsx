@@ -9,7 +9,7 @@ import {
 import { useApp, flushDanmakuSave } from '../store/app'
 import {
   streamUrl, downloadUrl, copyText, api, subtitleUrl, subassUrl, embedSubUrl, danmakuUrl,
-  libassWorkerUrl, libassWasmUrl, cjkFontUrl, yaheiFontUrl, fontFileUrl, isDesktop, report
+  libassWorkerUrl, libassWasmUrl, cjkFontUrl, yaheiFontUrl, isDesktop, report
 } from '../lib/api'
 import { formatSize, formatClock } from '../lib/format'
 
@@ -892,12 +892,7 @@ export default function PlayerModal() {
           // 带上字体指纹 token：字体文件换掉后 URL 会变，否则浏览器会一直用缓存里的旧字体
           const pUrl = cjkFontUrl(sf.token)
           const wUrl = yaheiFontUrl(sf.wideToken)
-          // 内置字幕组字体：ASS 族名 → 具体字体文件（方正准圆/少儿/超粗黑/毡笔黑/A-OTF/TT-JTC…）
-          for (const fam of sf.families || []) {
-            const u = fontFileUrl(fam.token)
-            for (const n of fam.names || []) if (n) map[String(n).toLowerCase()] = u
-          }
-          for (const n of sf.roundedNames || []) if (n && !map[String(n).toLowerCase()]) map[String(n).toLowerCase()] = pUrl
+          for (const n of sf.roundedNames) if (n) map[String(n).toLowerCase()] = pUrl
           for (const n of sf.wideNames || []) if (n) map[String(n).toLowerCase()] = wUrl
           opts.availableFonts = map
           opts.fallbackFont = wUrl || pUrl

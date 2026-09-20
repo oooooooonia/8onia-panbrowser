@@ -291,13 +291,13 @@ export default function SettingsPage() {
           <span className="dim small">全局字幕字体：</span>
           <b style={{ fontSize: 12.5 }}>{sf.family || '（未找到可用字体）'}</b>
           <span className="dim small">
-            {sf.source === 'manual'
+            {sf.forced
               ? '· 手动指定'
-              : sf.source === 'pack'
-                ? '· 随包内置（' + sf.requested + '）'
-                : sf.source === 'system'
-                  ? '· 系统已安装（' + sf.requested + '）'
-                  : '· 未找到圆角中文字体，已退到全局字体'}
+              : sf.installed
+                ? '· 系统已安装（' + sf.requested + '）'
+                : sf.fallback
+                  ? '· 未装圆角中文字体，已退到全局字体'
+                  : '· 未装 ' + sf.requested + '，用系统圆体顶替'}
           </span>
         </div>
         <div className="btn-row">
