@@ -386,7 +386,7 @@ export function startServer({ baidu }) {
     if (p === '/api/config' && method === 'POST') {
       const body = await readBody(req)
       const patch = {}
-      const strFields = ['clientId', 'clientSecret', 'refreshToken', 'rootFolderPath', 'orderBy', 'orderDirection', 'potplayerPath', 'mpvPath', 'vlcPath', 'playerMode', 'ffmpegPath', 'port', 'hostBind', 'alistDir']
+      const strFields = ['clientId', 'clientSecret', 'refreshToken', 'rootFolderPath', 'orderBy', 'orderDirection', 'potplayerPath', 'mpvPath', 'vlcPath', 'playerMode', 'ffmpegPath', 'port', 'hostBind', 'alistDir', 'subtitleFontPath']
       let credsChanged = false
       for (const k of strFields) {
         if (body[k] !== undefined && body[k] !== null) {

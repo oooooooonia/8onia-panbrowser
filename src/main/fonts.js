@@ -1,5 +1,6 @@
 import fs from 'fs'
 import path from 'path'
+import { loadConfig } from './config.js'
 
 /**
  * 全局字幕字体（给渲染层的 libass 用）。
@@ -92,24 +93,33 @@ function findRounded() {
   return null
 }
 
+function exists(p) {
+  try {
+    return !!p && fs.existsSync(p)
+  } catch {
+    return false
+  }
+}
+
 /**
  * 手动指定字体文件（可选，优先级最高）：
- * 环境变量 PANBOX_SUBTITLE_FONT=/path/to/方正准圆_GBK.ttf
- * —— 自己有一份方正准圆（字幕组字体包里的）时最省事，也可用来排查字体问题。
+ *   1) 设置页「全局字幕字体 → 选择字体文件…」（写进 config.json 的 subtitleFontPath）
+ *   2) 环境变量 PANBOX_SUBTITLE_FONT=/path/to/方正兰亭圆.ttf
+ * —— 自己有一份方正兰亭圆/方正准圆（字幕组字体包里的）时最省事，也是排查字体问题的手段。
  */
-function envOverride() {
-  const p = process.env.PANBOX_SUBTITLE_FONT
-  if (!p) return null
+function overrideFont() {
   try {
-    return fs.existsSync(p) ? p : null
+    const p = loadConfig().subtitleFontPath
+    if (exists(p)) return p
   } catch {
-    return null
+    /* ignore */
   }
+  return exists(process.env.PANBOX_SUBTITLE_FONT) ? process.env.PANBOX_SUBTITLE_FONT : null
 }
 
 /** /vendor/fonts/cjk 要发的文件：手动指定 > 圆体优先 > 全局兜底字体 */
 export function primaryFontFile() {
-  const forced = envOverride()
+  const forced = overrideFont()
   if (forced) return forced
   const r = findRounded()
   return r ? r.file : firstExisting(GLOBAL_FALLBACK)
@@ -122,7 +132,7 @@ export function wideFontFile() {
 
 /** 给 /api/status 的字体信息：前端据此构造 libass 的 availableFonts / fallbackFont */
 export function subtitleFontInfo() {
-  const forced = envOverride()
+  const forced = overrideFont()
   const rounded = findRounded()
   const wanted = ROUNDED[0].family
   let family = forced ? path.basename(forced) : rounded ? rounded.family : ''

@@ -16,6 +16,20 @@ export default function SettingsPage() {
 
   // 手动凭证编辑
   const cfg = server?.config || {}
+  // 全局字幕字体（主进程解析，这里只展示/可手动指定）
+  const sf = server?.subtitleFont || {}
+  const setFontPath = async (p) => {
+    await run('保存', () => api.saveConfig({ subtitleFontPath: p }))
+    try {
+      await useApp.getState().refreshStatus()
+    } catch { /* ignore */ }
+    notify(p ? '已切换全局字幕字体（重开视频生效）' : '已恢复自动选择字幕字体', 'ok')
+  }
+  const pickFont = async () => {
+    if (!window.pan || !window.pan.selectFile) return
+    const p = await window.pan.selectFile()
+    if (p) await setFontPath(p)
+  }
   const [clientId, setClientId] = useState(cfg.clientId || '')
   const [clientSecret, setClientSecret] = useState(cfg.clientSecret || '')
   const [refreshToken, setRefreshToken] = useState(cfg.refreshToken || '')
@@ -270,6 +284,30 @@ export default function SettingsPage() {
           >
             <RotateCcw size={13} /> 恢复 PotPlayer 默认
           </button>
+        </div>
+        {/* 全局字幕字体：字幕组的 ASS 一般指定「方正准圆_GBK」这类圆角中文字体，
+            而浏览器里的 libass 看不到系统字体，所以由主进程挑一份喂给它 */}
+        <div className="h-row wrap" style={{ marginTop: 10, gap: 6 }}>
+          <span className="dim small">全局字幕字体：</span>
+          <b style={{ fontSize: 12.5 }}>{sf.family || '（未找到可用字体）'}</b>
+          <span className="dim small">
+            {sf.forced
+              ? '· 手动指定'
+              : sf.installed
+                ? '· 系统已安装（' + sf.requested + '）'
+                : sf.fallback
+                  ? '· 未装圆角中文字体，已退到全局字体'
+                  : '· 未装 ' + sf.requested + '，用系统圆体顶替'}
+          </span>
+        </div>
+        <div className="btn-row">
+          <button className="btn ghost small" disabled={!!busy} onClick={pickFont}>
+            <Captions size={13} /> 选择字体文件…
+          </button>
+          <button className="btn ghost small" disabled={!cfg.subtitleFontPath || !!busy} onClick={() => setFontPath('')}>
+            <RotateCcw size={13} /> 恢复自动
+          </button>
+          <span className="dim small">只在本机读取该字体文件，不会上传；换完「重开视频」生效</span>
         </div>
       </section>
 

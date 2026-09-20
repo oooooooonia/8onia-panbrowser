@@ -55,7 +55,10 @@ export const DEFAULTS = {
     synchronousPlayback: false, // 跟随播放速度
     color: '#FFFFFF', // 默认颜色（可被单条弹幕覆盖）
     mode: 0 // 手动发弹幕的默认类型
-  }
+  },
+  // 全局字幕字体：留空 = 自动（圆角中文字体优先，系统里没有圆体就用全局字体）
+  // 可填任意 .ttf/.otf/.ttc 路径，比如自备的「方正兰亭圆」「方正准圆」
+  subtitleFontPath: ''
 }
 
 let cache = null
@@ -173,6 +176,7 @@ export function publicConfig() {
     skipUseChapters: c.skipUseChapters !== false,
     skipUseSubtitles: c.skipUseSubtitles !== false,
     danmaku: normalizeDanmaku(c.danmaku),
+    subtitleFontPath: c.subtitleFontPath || '',
     hasAccessToken: !!c.accessToken
   }
 }
