@@ -110,3 +110,17 @@ PotPlayer 路径默认自动检测常见安装位置，找不到可在设置里�
 官方接口的个人客户端封装，接口随百度调整可能失效。
 
 > 提示：嵌入式 Chromium 解码能力有限——H.265/HEVC、AC3 等编码无法在网页播放器解码（这是浏览器限制，与字幕无关）。此类原画建议用「PotPlayer 播放」（已验证）。另外数 GB 级原画流播放时 Chromium 浏览器进程会占用较高 CPU，属环境行为。
+
+## 字体来源声明
+
+`resources/vendor/fonts/` 里随包内置了几款字幕组常用的中文字体，取自
+**[Megumi-B/Anime_Font_Library](https://github.com/Megumi-B/Anime_Font_Library)** 的
+`[VCB-S]通用型字幕字体整合包V2.0`（内含方正准圆简体、方正少儿_GBK、方正超粗黑_GBK、
+方正毡笔黑简体、A-OTF TakaHand Std、TT-JTC ナミキ），用于本机字幕渲染。
+
+> **这些字体仅供学习、研究与个人参考使用；版权归各字体厂商（方正、A-OTF、JTC 等）所有。
+> 商业使用请购买正版授权。** 本项目只在本机加载并按 ASS 里的族名匹配这些字体，
+> 不对字体授权作任何担保，也不提供任何在线字体分发服务。
+
+想换字体：设置页 →「SRT 字幕外观」→「选择字体文件…」指定任意 .ttf/.otf/.ttc；
+或把字体丢进 `resources/vendor/fonts/`（会被自动识别）。

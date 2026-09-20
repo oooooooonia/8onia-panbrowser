@@ -74,6 +74,7 @@ export const danmakuUrl = (p) => `${API}/api/danmaku?path=${encodeURIComponent(p
 export const libassWorkerUrl = () => `${API}/vendor/libass/subtitles-octopus-worker.js`
 export const libassWasmUrl = () => `${API}/vendor/libass/subtitles-octopus-worker.wasm`
 /** 字体指纹查询串：字体文件换了 URL 也换，免得浏览器拿 max-age 缓存里的旧字体 */
+export const fontFileUrl = (token) => API + '/vendor/fonts/f?k=' + encodeURIComponent(token || '')
 const fontTokenQuery = (t) => (t ? '?v=' + encodeURIComponent(t) : '')
 export const cjkFontUrl = (token) => API + '/vendor/fonts/cjk' + fontTokenQuery(token)
 /** 完整字库（微软雅黑）：缺字回退 + ASS 里「微软雅黑」族名的映射 */
