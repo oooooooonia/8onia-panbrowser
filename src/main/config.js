@@ -34,7 +34,7 @@ export const DEFAULTS = {
   subFontScale: 0.05,
   subOutline: 1.4,
   subShadow: 0.6,
-  subBold: false,
+  subWeight: 'medium', // 字幕粗细：normal | medium | bold（后两者用合成加粗实现）
   // ---- 片头/片尾（OP/ED）跳过 ----
   skipEnabled: true, // 总开关：播放器内是否显示跳过按钮/进度条标记
   skipAutoOp: false, // 进入 OP 区间后自动跳过
@@ -168,7 +168,7 @@ export function publicConfig() {
     subFontScale: Number(c.subFontScale) || 0.05,
     subOutline: Number(c.subOutline) || 1.4,
     subShadow: Number(c.subShadow) || 0.6,
-    subBold: !!c.subBold,
+    subWeight: normalizeSubWeight(c.subWeight),
     skipEnabled: c.skipEnabled !== false,
     skipAutoOp: !!c.skipAutoOp,
     skipAutoEd: !!c.skipAutoEd,
@@ -179,4 +179,10 @@ export function publicConfig() {
     subtitleFontPath: c.subtitleFontPath || '',
     hasAccessToken: !!c.accessToken
   }
+}
+
+/** 字幕粗细：normal | medium | bold（其余值一律回落到 medium） */
+export function normalizeSubWeight(v) {
+  const s = String(v || '').toLowerCase()
+  return s === 'normal' || s === 'bold' ? s : 'medium'
 }

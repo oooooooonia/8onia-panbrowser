@@ -380,3 +380,52 @@ export function subtitleToAss(text, ext, opts = {}) {
   }
   return cuesToAss(parseCuesByType(text, type), opts)
 }
+
+/**
+ * 字幕粗细：libass 只有「合成加粗」一档（FreeType embolden），没有独立字重，
+ * 而替代用的圆体（如系统幼圆）往往只有一个偏细的字重，所以：
+ *   normal → 原样不动
+ *   medium → 把 Bold=0 的样式打开（视觉≈中等粗细）
+ *   bold   → 全部打开，并把描边加粗一点（再厚一档）
+ * 需要在 [V4+ Styles] 段里按 Format 行定位 Bold / Outline 列，不能写死下标（各家写法不同）。
+ */
+export function applySubWeight(ass, weight = 'medium') {
+  if (!ass || weight === 'normal') return ass
+  const out = []
+  let inStyles = false
+  let boldAt = -1
+  let outlineAt = -1
+  for (const line of String(ass).split('\n')) {
+    const low = line.trim().toLowerCase()
+    if (low.startsWith('[')) {
+      inStyles = low === '[v4+ styles]' || low === '[v4 styles]'
+      boldAt = -1
+      outlineAt = -1
+      out.push(line)
+      continue
+    }
+    if (!inStyles) {
+      out.push(line)
+      continue
+    }
+    if (low.startsWith('format:')) {
+      const cols = line.slice(line.indexOf(':') + 1).split(',').map((x) => x.trim().toLowerCase())
+      boldAt = cols.indexOf('bold')
+      outlineAt = cols.indexOf('outline')
+      out.push(line)
+      continue
+    }
+    if (!low.startsWith('style:') || boldAt < 0) {
+      out.push(line)
+      continue
+    }
+    const parts = line.split(',')
+    if (parts.length > boldAt && (weight === 'bold' || parts[boldAt].trim() === '0')) parts[boldAt] = ' -1'
+    if (weight === 'bold' && outlineAt >= 0 && parts.length > outlineAt) {
+      const o = Number(parts[outlineAt].trim())
+      if (Number.isFinite(o)) parts[outlineAt] = ' ' + (o + 0.8).toFixed(1)
+    }
+    out.push(parts.join(','))
+  }
+  return out.join('\n')
+}

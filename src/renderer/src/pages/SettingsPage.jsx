@@ -53,7 +53,7 @@ export default function SettingsPage() {
   const [subFont, setSubFont] = useState(Math.round(Number(cfg.subFontScale || 0.05) * 100))
   const [subOutline, setSubOutline] = useState(Number(cfg.subOutline || 1.4))
   const [subShadow, setSubShadow] = useState(Number(cfg.subShadow || 0.6))
-  const [subBold, setSubBold] = useState(!!cfg.subBold)
+  const [subWeight, setSubWeight] = useState(cfg.subWeight || 'medium')
 
   // OP/ED 跳过
   const [skipEnabled, setSkipEnabled] = useState(cfg.skipEnabled !== false)
@@ -76,7 +76,7 @@ export default function SettingsPage() {
     setSubFont(Math.round(Number(cfg.subFontScale || 0.05) * 100))
     setSubOutline(Number(cfg.subOutline || 1.4))
     setSubShadow(Number(cfg.subShadow || 0.6))
-    setSubBold(!!cfg.subBold)
+    setSubWeight(cfg.subWeight || 'medium')
     setSkipEnabled(cfg.skipEnabled !== false)
     setSkipAutoOp(!!cfg.skipAutoOp)
     setSkipAutoEd(!!cfg.skipAutoEd)
@@ -258,7 +258,12 @@ export default function SettingsPage() {
             <input className="num-input" type="number" min={0} max={4} step={0.2} value={subShadow} onChange={(e) => setSubShadow(Number(e.target.value))} />
           </label>
           <label className="radio-line">
-            <input type="checkbox" checked={subBold} onChange={(e) => setSubBold(e.target.checked)} /> 粗体
+            <span className="dim small" style={{ alignSelf: 'center' }}>字幕粗细</span>
+            {[['normal', '常规'], ['medium', '中等'], ['bold', '加粗']].map(([v, label]) => (
+              <button key={v} type="button" className={'chip-btn ' + (subWeight === v ? 'on' : '')} onClick={() => setSubWeight(v)}>
+                {label}
+              </button>
+            ))}
           </label>
         </div>
         <div className="btn-row" style={{ marginTop: 8 }}>
@@ -267,7 +272,7 @@ export default function SettingsPage() {
             disabled={!!busy}
             onClick={async () => {
               try {
-                await api.saveConfig({ subFontScale: (subFont || 5) / 100, subOutline, subShadow, subBold })
+                await api.saveConfig({ subFontScale: (subFont || 5) / 100, subOutline, subShadow, subWeight })
                 notify('字幕外观已保存（重开视频生效）', 'ok')
               } catch (e) {
                 notify(e.message, 'error')
@@ -279,7 +284,7 @@ export default function SettingsPage() {
           <button
             className="btn ghost small"
             onClick={() => {
-              setSubFont(5); setSubOutline(1.4); setSubShadow(0.6); setSubBold(false)
+              setSubFont(5); setSubOutline(1.4); setSubShadow(0.6); setSubWeight('medium')
             }}
           >
             <RotateCcw size={13} /> 恢复 PotPlayer 默认

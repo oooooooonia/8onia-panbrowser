@@ -4,10 +4,10 @@ import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import { DLINK_UA } from './api/baidu.js'
-import { loadConfig, saveConfig, publicConfig, clearCredentials, normalizeDanmaku, DEFAULTS } from './config.js'
+import { loadConfig, saveConfig, publicConfig, clearCredentials, normalizeDanmaku, normalizeSubWeight, DEFAULTS } from './config.js'
 import { scanAlist, importFromAlist } from './importers/alist.js'
 import { detectPotplayer, detectPlayers, openWithPlayer, openWithPotplayer } from './potplayer.js'
-import { SUB_EXTS, extOf, isSubtitleName, subtitleToVtt, detectSubtitleType, decodeSubtitle, srtToAss, subtitleToAss } from './subtitles.js'
+import { SUB_EXTS, extOf, isSubtitleName, subtitleToVtt, detectSubtitleType, decodeSubtitle, srtToAss, subtitleToAss, applySubWeight } from './subtitles.js'
 import { probeEmbeddedSubs, extractSubtitleText, ffmpegAvailable, localStreamUrl } from './media.js'
 import { createSkipService } from './skip.js'
 import { putAssText } from './asscache.js'
@@ -419,7 +419,7 @@ export function startServer({ baidu }) {
           patch[k] = Number.isFinite(n) ? Math.min(range[1], Math.max(range[0], n)) : DEFAULTS[k]
         }
       }
-      if (body.subBold !== undefined && body.subBold !== null) patch.subBold = !!body.subBold
+      if (body.subWeight !== undefined && body.subWeight !== null) patch.subWeight = normalizeSubWeight(String(body.subWeight))
       // 弹幕外观（B 站 XML 弹幕插件）：整体对象，服务端归一化后落盘
       if (body.danmaku !== undefined && body.danmaku !== null) patch.danmaku = normalizeDanmaku(body.danmaku)
       // OP/ED 跳过
@@ -634,10 +634,10 @@ export function startServer({ baidu }) {
           fontScale: Number(cfg2.subFontScale) || 0.05,
           outline: Number(cfg2.subOutline) || 1.4,
           shadow: Number(cfg2.subShadow) || 0.6,
-          bold: !!cfg2.subBold
+          bold: (cfg2.subWeight || 'medium') !== 'normal'
         })
         if (!ass) throw new Error('无法生成增强字幕')
-        const body = Buffer.from(ass, 'utf-8')
+        const body = Buffer.from(applySubWeight(ass, cfg2.subWeight), 'utf-8')
         res.writeHead(200, {
           'content-type': 'text/plain; charset=utf-8',
           'content-length': body.length,
@@ -786,7 +786,7 @@ export function startServer({ baidu }) {
               fontScale: Number(cfg2.subFontScale) || 0.05,
               outline: Number(cfg2.subOutline) || 1.4,
               shadow: Number(cfg2.subShadow) || 0.6,
-              bold: !!cfg2.subBold
+              bold: (cfg2.subWeight || 'medium') !== 'normal'
             })
           }
         }
@@ -794,7 +794,7 @@ export function startServer({ baidu }) {
         // 复用：播放器已经抽过的这条字幕轨留一份，OP/ED 检测就不必再拉一遍整集数据
         if (ex.isAss) putAssText(videoPath, idx, ex.text)
         else if (fmt !== 'vtt') putAssText(videoPath, idx, out)
-        const body = Buffer.from(out, 'utf-8')
+        const body = Buffer.from(applySubWeight(out, cfg2.subWeight), 'utf-8')
         res.writeHead(200, {
           'content-type': contentType,
           'content-length': body.length,
