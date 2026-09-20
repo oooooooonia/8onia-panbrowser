@@ -73,7 +73,10 @@ function sendJson(res, code, obj) {
   res.writeHead(code, {
     'content-type': 'application/json; charset=utf-8',
     'content-length': Buffer.byteLength(body),
-    'cache-control': 'no-store'
+    'cache-control': 'no-store',
+    // dev 模式渲染层由 Vite 提供（http://localhost:5173），API 在 127.0.0.1:<port> 属跨源，
+    // 少了这组头的话 fetch 会被浏览器 CORS 拦掉（打包后同源，不受影响）
+    ...corsHeaders()
   })
   res.end(body)
 }
