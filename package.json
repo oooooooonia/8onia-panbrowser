@@ -1,6 +1,6 @@
 {
   "name": "pan-browser",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "PanBrowser - 百度网盘个人浏览器（Electron，可全新电脑安装）",
   "main": "out/main/index.js",
   "author": "personal",

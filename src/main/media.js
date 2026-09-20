@@ -57,6 +57,7 @@ const FFMPEG_DIRS = [
   'C:\\ffmpeg\\bin',
   'C:\\Program Files\\ffmpeg\\bin',
   'C:\\Program Files (x86)\\ffmpeg\\bin',
+  'D:\\ffmpeg\\bin',
   'D:\\Program Files\\ffmpeg\\bin'
 ]
 
