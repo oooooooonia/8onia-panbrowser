@@ -14,3 +14,6 @@ resources/default-config.json
 # 意外生成的垃圾目录（历史上由误用 %SystemDrive% 等路径产生）
 %SystemDrive%/
 NVIDIA Corporation/
+
+# 给新 agent 的上手手册（含内部踩坑记录，不上传 GitHub）
+AGENT-README.md
