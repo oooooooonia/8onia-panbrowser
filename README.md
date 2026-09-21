@@ -13,6 +13,20 @@
 > 另有一套 **Android 离线独立版**（Capacitor + 原生 Kotlin 插件，手机自己跑后端、完全离线），
 > 代码在独立目录 `../panbrowser-mobile`，不在本仓库内。
 
+## 截图
+
+播放同一集（《灵能百分百》第 01 集，1080p 原画直出）时的界面，两端**共用同一份渲染层**：
+剧集 / 片头片尾 / 字幕 / 弹幕 四条控制栏、ASS 字幕（libass）与弹幕的观感完全一致；
+手机版把「下载字幕」等按钮换成触屏尺寸，并多出「VLC 播放」（把原画交给外部播放器）。
+
+### Windows 桌面版
+
+![Windows 桌面版播放界面：剧集/片头片尾/字幕/弹幕 四条控制栏 + 弹幕与 ASS 字幕叠加](docs/screenshots/desktop-player.jpg)
+
+### Android 离线独立版（手机自己跑后端，完全离线）
+
+![Android 离线独立版播放界面：同一套控制栏在窄屏下自动换行，含 VLC 播放按钮](docs/screenshots/android-player.jpg)
+
 ## 功能
 
 ### 挂载与浏览
