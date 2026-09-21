@@ -133,6 +133,46 @@ npm run dist    # 打包 Windows 安装包
 > 遇到 `refresh token has been used` 时，在 AList 里重新保存一次该存储（持久化最新令牌），或停止 AList 后再导入。
 > 应用内置容错：持有有效 `access_token` 时不主动刷新，只有接口返回 401 才刷新。
 
+## 第三方与相关链接
+
+本项目的核心能力建立在下面这些第三方服务与开源项目之上，感谢它们。
+
+### 服务 / 数据源
+
+| 名称 | 链接 | 用途 |
+| --- | --- | --- |
+| 百度网盘 | https://pan.baidu.com/ | 文件存储（本项目只挂载这一家） |
+| 百度网盘开放平台 | https://pan.baidu.com/union | 列表 / dlink / 账户接口 |
+| 弹弹play | https://www.dandanplay.com/ | 弹幕数据来源（文件识别匹配） |
+| 弹弹play 开放弹幕网络 · 文档 | https://doc.dandanplay.com/open/ | 接口说明、签名验证模式 |
+| 弹弹play 开发者中心 | https://dev.dandanplay.com/ | 申请 AppId / AppSecret |
+
+### 开源依赖
+
+| 名称 | 链接 | 用途 |
+| --- | --- | --- |
+| Electron | https://www.electronjs.org/ | 桌面运行时 |
+| electron-vite | https://electron-vite.org/ | 构建与开发服务器 |
+| React | https://react.dev/ | 渲染层界面 |
+| Vite | https://vite.dev/ | 渲染层构建 |
+| zustand | https://github.com/pmndrs/zustand | 渲染层状态管理 |
+| ArtPlayer | https://artplayer.org/ | 网页播放器 |
+| artplayer-plugin-danmuku | https://www.npmjs.com/package/artplayer-plugin-danmuku | 弹幕渲染（吃 B 站 XML，`p` 需 8 段） |
+| JavascriptSubtitlesOctopus (libass-wasm) | https://github.com/libass/JavascriptSubtitlesOctopus | 真·ASS 字幕渲染（还原坐标/特效） |
+| FFmpeg | https://ffmpeg.org/ | 内嵌字幕抽取、章节探测（需自备，见设置页） |
+| lucide | https://lucide.dev/ | 图标 |
+| Capacitor | https://capacitorjs.com/ | 手机离线独立版（独立目录 `../panbrowser-mobile`） |
+| NanoHTTPD | https://github.com/NanoHttpd/nanohttpd | 手机版本机流代理（Range + UA 转发） |
+
+### 相关项目 / 参考
+
+| 名称 | 链接 | 说明 |
+| --- | --- | --- |
+| AList | https://github.com/AlistGo/alist · https://alistgo.com/ | 百度驱动接口对齐参考；凭证可一键从它的 `data.db` 导入 |
+| VLC | https://www.videolan.org/vlc/ | 外部播放器（桌面/手机都用） |
+| PotPlayer | https://potplayer.tv/ | 外部播放器（Windows） |
+| mpv | https://mpv.io/ | 外部播放器 |
+
 ## 免责声明
 
 仅供个人学习与交流。所有文件版权归权利人所有；本项目不存储任何文件，仅作百度网盘官方接口的个人客户端封装，
